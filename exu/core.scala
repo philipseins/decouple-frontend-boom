@@ -364,7 +364,9 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
     + BoomCoreStringPrefix(
         "Using FPU Unit?       : " + usingFPU.toString,
         "Using FDivSqrt?       : " + usingFDivSqrt.toString,
-        "Using VM?             : " + usingVM.toString) + "\n")
+        "Using VM?             : " + usingVM.toString) + "\n"
+    + BoomCoreStringPrefix(
+        "PTQ Entries           : " + ptqEntries) + "\n")
 
   //-------------------------------------------------------------
   //-------------------------------------------------------------
