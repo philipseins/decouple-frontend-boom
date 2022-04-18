@@ -409,6 +409,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
       io.ifu.redirect_pc  := Mux(flush_typ === FlushTypes.eret,
                                  RegNext(RegNext(csr.io.evec)),
                                  csr.io.evec)
+      printf("FlushTypes.useCsrEvec: %x", io.ifu.redirect_pc)
     } .otherwise {
       val flush_pc = (AlignPCToBoundary(io.ifu.get_pc(0).pc, icBlockBytes)
                       + RegNext(rob.io.flush.bits.pc_lob)
@@ -416,6 +417,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
       val flush_pc_next = flush_pc + Mux(RegNext(rob.io.flush.bits.is_rvc), 2.U, 4.U)
       io.ifu.redirect_pc := Mux(FlushTypes.useSamePC(flush_typ),
                                 flush_pc, flush_pc_next)
+      printf("FlushTypes.useCsrEvec otherwise: %x", io.ifu.redirect_pc)
 
     }
     io.ifu.redirect_ftq_idx := RegNext(rob.io.flush.bits.ftq_idx)
@@ -430,6 +432,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
     val mispredict_target = Mux(brupdate.b2.pc_sel === PC_PLUS4, npc, bj_addr)
     io.ifu.redirect_val     := true.B
     io.ifu.redirect_pc      := mispredict_target
+    printf("brupdate.b2.mispredict: %x", io.ifu.redirect_pc)
     io.ifu.redirect_flush   := true.B
     io.ifu.redirect_ftq_idx := brupdate.b2.uop.ftq_idx
     val use_same_ghist = (brupdate.b2.cfi_type === CFI_BR &&
@@ -1489,6 +1492,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
           priv,
           Sext(rob.io.commit.uops(w).debug_pc(vaddrBits-1,0), xLen))
         printf_inst(rob.io.commit.uops(w))
+        printf(" %d ", rob.io.commit.uops(w).uopc)
         when (rob.io.commit.uops(w).dst_rtype === RT_FIX && rob.io.commit.uops(w).ldst =/= 0.U) {
           printf(" x%d 0x%x\n",
             rob.io.commit.uops(w).ldst,

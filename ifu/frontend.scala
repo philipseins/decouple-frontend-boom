@@ -508,10 +508,10 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   val f3_clear = WireInit(false.B)
   
   val ptq = withReset(reset.asBool || f3_clear) {
-    Module(new Queue(new PredictBundle, ptqEntries, pipe=true, flow=true))}
+    Module(new Queue(new PredictBundle, ptqEntries, pipe=false, flow=false))}
 
 
-  val f4_ready = WireInit(true.B)
+  val f4_ready = WireInit(false.B)
   val s3_valid = RegNext(s2_valid && !f2_clear, false.B)
   val s3_vpc   = RegNext(s2_vpc)
   val s3_ghist = RegNext(s2_ghist)
@@ -528,6 +528,12 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   ptq.io.enq.bits.tsrc      := s3_tsrc
   ptq.io.enq.bits.f3        := bpd.io.resp.f3
   ptq.io.enq.bits.ras_resp  := ras.io.read_addr
+
+  /*
+  when (ptq.io.enq.fire) {
+    printf("enter ptq: %x\n", ptq.io.enq.bits.pc)
+  }
+  */
 
 
   when (ptq.io.enq.fire) {
@@ -562,10 +568,23 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     f4_tsrc      := ptq.io.deq.bits.tsrc
     f4_bpd_resp  := ptq.io.deq.bits.f3
     f4_ras_resp  := ptq.io.deq.bits.ras_resp
+    f4_ready     := false.B
+    // printf("deq from ptq %x with f4_vpc %x\n", ptq.io.deq.bits.pc, f4_vpc)
   }
+  /*
+  when (f4_valid) {
+    printf("f4 vpc: %x\n", f4_vpc)
+  }
+  */
+  // printf("f4 vpc: %x\n", f4_vpc)
 
   icache.io.req.valid     := f4_valid
   icache.io.req.bits.addr := f4_vpc
+  /*
+  when (icache.io.req.valid) {
+    printf("icache request pc: %x\n", icache.io.req.bits.addr)
+  }
+  */
 
   // --------------------------------------------------------
   // **** F5 ****
@@ -600,9 +619,14 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
 
   when (f5_valid && !f5_tlb_miss) {
     f4_valid := !(f5_tlb_resp.ae.inst || f5_tlb_resp.pf.inst)
-    f4_ready := !(f5_tlb_resp.ae.inst || f5_tlb_resp.pf.inst)
     f4_is_replay := false.B
   }
+
+  /*
+  when (f5_valid) {
+    printf("f5 vpc: %x\n", f5_vpc)
+  }
+  */
 
 
   val f6_valid = RegNext(f5_valid && !f5_clear, false.B)
@@ -629,18 +653,38 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     f4_bpd_resp  := f6_bpd_resp
     f4_is_replay := f6_valid && icache.io.resp.valid
     f5_clear     := true.B
-    f4_ready     := false.B
+    // printf("redo icache access %x with f4_vpc %x\n", f6_vpc, f4_vpc)
   } .elsewhen(f6_valid && f7_ready) {
     when (!f5_valid) {
       f5_clear := true.B
 
       f4_valid     := !((f6_tlb_resp.ae.inst || f6_tlb_resp.pf.inst) && !f6_is_replay)
       f4_is_replay := false.B
-      f4_ready     := !((f6_tlb_resp.ae.inst || f6_tlb_resp.pf.inst) && !f6_is_replay)
+      /*
+      when (f4_ready) { 
+        printf("f6 f4_ready: true %x\n", f6_vpc)
+      }
+      */
+    }
+    when (icache.io.resp.valid) {
+      f5_clear        := true.B
+      f4_is_replay    := false.B
+      f4_ready        := true.B
+      f4_valid        := false.B
     }
   }
   f4_replay_resp := f6_tlb_resp
   f4_replay_ppc  := f6_ppc
+
+  /*
+  when (f6_valid) {
+    printf("f6 vpc: %x", f6_vpc)
+    when (icache.io.resp.valid) {
+      printf("icache resp success\n")
+    }
+  }
+  */
+  // printf("ptq deq fire %x\n", ptq.io.deq.fire)
 
   val f7_clear = WireInit(false.B)
   val f7 = withReset(reset.asBool || f7_clear) {
@@ -665,7 +709,11 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   f7.io.enq.bits.fsrc := f6_fsrc
   f7.io.enq.bits.tsrc := f6_tsrc
   f7.io.enq.bits.ras_resp := f6_ras_resp
-
+  
+  when (f7.io.enq.valid) {
+    printf("f7 enq: %x\t%x\n", f7.io.enq.bits.pc, f7.io.enq.bits.data)
+  }
+  
 
 
   // The BPD resp comes in f3
@@ -970,9 +1018,9 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
       f7_fetch_bundle.fsrc := BSRC_3
     }
   }
-  printf("fetch_bundle: %x\t%x\n", f7_fetch_bundle.pc, f7_fetch_bundle.mask)
-  printf("fetch_bundle_insts: %x\t%x\t%x\t%x\n", f7_fetch_bundle.insts(0), f7_fetch_bundle.insts(1), f7_fetch_bundle.insts(2), f7_fetch_bundle.insts(3))
-  printf("fetch_bundle_exp_insts: %x\t%x\t%x\t%x\n", f7_fetch_bundle.exp_insts(0), f7_fetch_bundle.exp_insts(1), f7_fetch_bundle.exp_insts(2), f7_fetch_bundle.exp_insts(3))
+  
+  // printf("fetch_bundle_insts: %x\t%x\t%x\t%x\n", f7_fetch_bundle.insts(0), f7_fetch_bundle.insts(1), f7_fetch_bundle.insts(2), f7_fetch_bundle.insts(3))
+  // printf("fetch_bundle_exp_insts: %x\t%x\t%x\t%x\n", f7_fetch_bundle.exp_insts(0), f7_fetch_bundle.exp_insts(1), f7_fetch_bundle.exp_insts(2), f7_fetch_bundle.exp_insts(3))
 
   // When f3 finds a btb mispredict, queue up a bpd correction update
   val f4_btb_corrections = Module(new Queue(new BranchPredictionUpdate, 2))
@@ -1045,6 +1093,12 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   f4.io.enq.bits  := f7_fetch_bundle
   f4.io.deq.ready := fb.io.enq.ready && ftq.io.enq.ready && !f4_delay
 
+  
+  when (f4.io.enq.valid) {
+    printf("f4 enq: %x\n", f4.io.enq.bits.pc)
+  }
+  
+
   fb.io.enq.valid := f4.io.deq.valid && ftq.io.enq.ready && !f4_delay
   fb.io.enq.bits  := f4.io.deq.bits
   fb.io.enq.bits.ftq_idx := ftq.io.enq_idx
@@ -1053,6 +1107,17 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     Mux(f4_sfb_valid, f4_sfb_mask(fetchWidth-1,0), 0.U(fetchWidth.W)) |
     f4.io.deq.bits.shadowed_mask.asUInt
   ).asBools
+
+  
+  when (fb.io.enq.valid) {
+    printf("fetch buffer: %x\t%x\t%x\t%x\t%x\n", fb.io.enq.bits.pc, 
+    fb.io.enq.bits.exp_insts(0), 
+    fb.io.enq.bits.exp_insts(1), 
+    fb.io.enq.bits.exp_insts(2), 
+    fb.io.enq.bits.exp_insts(3))
+  }
+  
+  
 
 
   ftq.io.enq.valid          := f4.io.deq.valid && fb.io.enq.ready && !f4_delay
@@ -1087,6 +1152,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   fb.io.clear := false.B
 
   when (io.cpu.sfence.valid) {
+    printf("sfence\n")
     fb.io.clear := true.B
     f7_clear    := true.B
     f6_clear    := true.B
@@ -1121,6 +1187,8 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
 
     ftq.io.redirect.valid := io.cpu.redirect_val
     ftq.io.redirect.bits  := io.cpu.redirect_ftq_idx
+
+    printf("redirect flush, target: %x\n", io.cpu.redirect_pc)
   }
 
   ftq.io.debug_ftq_idx := io.cpu.debug_ftq_idx

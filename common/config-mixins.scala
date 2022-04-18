@@ -131,6 +131,7 @@ class WithNSmallBooms(n: Int = 1, overrideIdOffset: Option[Int] = None) extends 
  */
 class WithNMediumBooms(n: Int = 1, overrideIdOffset: Option[Int] = None) extends Config(
   new WithTAGELBPD ++ // Default to TAGE-L BPD
+  new WithBoomCommitLogPrintf ++
   // new WithBoom2BPD ++
   new Config((site, here, up) => {
     case TilesLocated(InSubsystem) => {
