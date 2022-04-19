@@ -348,6 +348,10 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   with HasBoomCoreParameters
   with HasBoomFrontendParameters
 {
+
+  // add a cycle counter
+  val debug_cycles = freechips.rocketchip.util.WideCounter(32)
+
   val io = IO(new BoomFrontendBundle(outer))
   val io_reset_vector = outer.resetVectorSinkNode.bundle
   implicit val edge = outer.masterNode.edges.out(0)
@@ -386,6 +390,8 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   bpd.io.f0_req.valid      := s0_valid
   bpd.io.f0_req.bits.pc    := s0_vpc
   bpd.io.f0_req.bits.ghist := s0_ghist
+
+  printf("Cycle %d vpc %x\n", debug_cycles.value, s0_vpc)
 
   // --------------------------------------------------------
   // **** uBTB (F1) ****
@@ -529,11 +535,11 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   ptq.io.enq.bits.f3        := bpd.io.resp.f3
   ptq.io.enq.bits.ras_resp  := ras.io.read_addr
 
-  /*
+  
   when (ptq.io.enq.fire) {
-    printf("enter ptq: %x\n", ptq.io.enq.bits.pc)
+    printf("Cycle %d enter ptq %x\n", debug_cycles.value, ptq.io.enq.bits.pc)
   }
-  */
+  
 
 
   when (ptq.io.enq.fire) {
@@ -569,7 +575,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     f4_bpd_resp  := ptq.io.deq.bits.f3
     f4_ras_resp  := ptq.io.deq.bits.ras_resp
     f4_ready     := false.B
-    // printf("deq from ptq %x with f4_vpc %x\n", ptq.io.deq.bits.pc, f4_vpc)
+    printf("Cycle %d deq from ptq %x with f4_vpc %x\n", debug_cycles.value, ptq.io.deq.bits.pc, f4_vpc)
   }
   /*
   when (f4_valid) {
@@ -685,6 +691,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   }
   */
   // printf("ptq deq fire %x\n", ptq.io.deq.fire)
+  printf("Cycle %d f6_vpc %x with valid %d\n", debug_cycles.value, f6_vpc, f6_valid)
 
   val f7_clear = WireInit(false.B)
   val f7 = withReset(reset.asBool || f7_clear) {
@@ -711,7 +718,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   f7.io.enq.bits.ras_resp := f6_ras_resp
   
   when (f7.io.enq.valid) {
-    printf("f7 enq: %x\t%x\n", f7.io.enq.bits.pc, f7.io.enq.bits.data)
+    printf("Cycle %d f7 enq %x %x\n", debug_cycles.value, f7.io.enq.bits.pc, f7.io.enq.bits.data)
   }
   
 
@@ -1008,6 +1015,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
       f3_clear := true.B
       f5_clear := true.B
       f6_clear := true.B
+      f4_valid := false.B
 
       s0_valid     := !(f7_fetch_bundle.xcpt_pf_if || f7_fetch_bundle.xcpt_ae_if)
       s0_vpc       := f7_predicted_target
@@ -1095,7 +1103,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
 
   
   when (f4.io.enq.valid) {
-    printf("f4 enq: %x\n", f4.io.enq.bits.pc)
+    printf("Cycle %d f8 enq %x\n", debug_cycles.value, f4.io.enq.bits.pc)
   }
   
 
@@ -1110,7 +1118,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
 
   
   when (fb.io.enq.valid) {
-    printf("fetch buffer: %x\t%x\t%x\t%x\t%x\n", fb.io.enq.bits.pc, 
+    printf("Cycle %d fetch buffer %x %x %x %x %x\n", debug_cycles.value, fb.io.enq.bits.pc, 
     fb.io.enq.bits.exp_insts(0), 
     fb.io.enq.bits.exp_insts(1), 
     fb.io.enq.bits.exp_insts(2), 
@@ -1152,7 +1160,6 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   fb.io.clear := false.B
 
   when (io.cpu.sfence.valid) {
-    printf("sfence\n")
     fb.io.clear := true.B
     f7_clear    := true.B
     f6_clear    := true.B
@@ -1161,11 +1168,13 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     f3_clear    := true.B
     f2_clear    := true.B
     f1_clear    := true.B
+    f4_valid    := false.B
 
     s0_valid     := false.B
     s0_vpc       := io.cpu.sfence.bits.addr
     f4_is_replay := false.B
     f4_is_sfence := true.B
+    printf("sfence redirect to %x\n", io.cpu.redirect_pc)
 
   }.elsewhen (io.cpu.redirect_flush) {
     fb.io.clear := true.B
@@ -1176,6 +1185,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     f3_clear    := true.B
     f2_clear    := true.B
     f1_clear    := true.B
+    f4_valid    := false.B
 
     f7_prev_is_half := false.B
 
@@ -1188,7 +1198,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     ftq.io.redirect.valid := io.cpu.redirect_val
     ftq.io.redirect.bits  := io.cpu.redirect_ftq_idx
 
-    printf("redirect flush, target: %x\n", io.cpu.redirect_pc)
+    printf("flush redirect to %x\n", io.cpu.redirect_pc)
   }
 
   ftq.io.debug_ftq_idx := io.cpu.debug_ftq_idx
