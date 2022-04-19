@@ -407,6 +407,10 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
       io.ifu.redirect_pc  := Mux(flush_typ === FlushTypes.eret,
                                  RegNext(RegNext(csr.io.evec)),
                                  csr.io.evec)
+      printf("exception or eret redirect %x caused by %x\n", io.ifu.redirect_pc, 
+              AlignPCToBoundary(io.ifu.get_pc(0).pc, icBlockBytes) 
+              + RegNext(rob.io.flush.bits.pc_lob) 
+              - Mux(RegNext(rob.io.flush.bits.edge_inst), 2.U, 0.U))
     } .otherwise {
       val flush_pc = (AlignPCToBoundary(io.ifu.get_pc(0).pc, icBlockBytes)
                       + RegNext(rob.io.flush.bits.pc_lob)
@@ -414,6 +418,8 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
       val flush_pc_next = flush_pc + Mux(RegNext(rob.io.flush.bits.is_rvc), 2.U, 4.U)
       io.ifu.redirect_pc := Mux(FlushTypes.useSamePC(flush_typ),
                                 flush_pc, flush_pc_next)
+      
+      printf("refetch redirect %x caused by %x\n", io.ifu.redirect_pc, flush_pc);
 
     }
     io.ifu.redirect_ftq_idx := RegNext(rob.io.flush.bits.ftq_idx)
@@ -430,6 +436,8 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
     io.ifu.redirect_pc      := mispredict_target
     io.ifu.redirect_flush   := true.B
     io.ifu.redirect_ftq_idx := brupdate.b2.uop.ftq_idx
+
+    printf("mispredict redirect %x caused by %x\n", io.ifu.redirect_pc, uop_maybe_pc)
     val use_same_ghist = (brupdate.b2.cfi_type === CFI_BR &&
                           !brupdate.b2.taken &&
                           bankAlign(block_pc) === bankAlign(npc))
@@ -1487,6 +1495,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
           priv,
           Sext(rob.io.commit.uops(w).debug_pc(vaddrBits-1,0), xLen))
         printf_inst(rob.io.commit.uops(w))
+        printf(" %d ", rob.io.commit.uops(w).uopc)
         when (rob.io.commit.uops(w).dst_rtype === RT_FIX && rob.io.commit.uops(w).ldst =/= 0.U) {
           printf(" x%d 0x%x\n",
             rob.io.commit.uops(w).ldst,

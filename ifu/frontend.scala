@@ -980,6 +980,8 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     s0_is_replay := false.B
     s0_is_sfence := true.B
 
+    printf("sfence redirect to %x\n", io.cpu.sfence.bits.addr)
+
   }.elsewhen (io.cpu.redirect_flush) {
     fb.io.clear := true.B
     f4_clear    := true.B
@@ -997,6 +999,8 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
 
     ftq.io.redirect.valid := io.cpu.redirect_val
     ftq.io.redirect.bits  := io.cpu.redirect_ftq_idx
+
+    printf("redirect flush to %x\n", io.cpu.redirect_pc)
   }
 
   ftq.io.debug_ftq_idx := io.cpu.debug_ftq_idx
