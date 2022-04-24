@@ -41,6 +41,12 @@ class FrontendResp(implicit p: Parameters) extends BoomBundle()(p) {
   val fsrc = UInt(BSRC_SZ.W)
   val tsrc = UInt(BSRC_SZ.W)
   val ras_resp = UInt(vaddrBitsExtended.W)
+  val bpd_f2_vpc = UInt(vaddrBitsExtended.W)
+  val bpd_f1_vpc = UInt(vaddrBitsExtended.W)
+  val bpd_f2_ghist = new GlobalHistory
+  val bpd_f1_ghist = new GlobalHistory
+  val bpd_f1_valid = Bool()
+  val bpd_f2_valid = Bool()
 }
 
 class GlobalHistory(implicit p: Parameters) extends BoomBundle()(p)
@@ -271,6 +277,12 @@ class PredictBundle(implicit p: Parameters) extends BoomBundle
   val tsrc     = UInt(BSRC_SZ.W)
   val f3       = new BranchPredictionBundle
   val ras_resp = UInt(vaddrBitsExtended.W)
+  val f1_vpc   = UInt(vaddrBitsExtended.W)
+  val f2_vpc   = UInt(vaddrBitsExtended.W)
+  val f1_ghist = new GlobalHistory
+  val f2_ghist = new GlobalHistory
+  val f1_valid = Bool()
+  val f2_valid = Bool()
 }
 
 
@@ -391,7 +403,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   bpd.io.f0_req.bits.pc    := s0_vpc
   bpd.io.f0_req.bits.ghist := s0_ghist
 
-  printf("Cycle %d vpc %x\n", debug_cycles.value, s0_vpc)
+  // printf("Cycle %d vpc %x\n", debug_cycles.value, s0_vpc)
 
   // --------------------------------------------------------
   // **** uBTB (F1) ****
@@ -478,13 +490,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
 
   val f2_correct_f1_ghist = s1_ghist =/= f2_predicted_ghist && enableGHistStallRepair.B
 
-  when (s2_valid && !f3_ready) {
-    s0_valid := true.B
-    s0_vpc   := s2_vpc
-    s0_ghist := s2_ghist
-    s0_tsrc  := s2_tsrc
-    f1_clear := true.B
-  } .elsewhen (s2_valid && f3_ready) {
+  when (s2_valid) {
     when (s1_valid && s1_vpc === f2_predicted_target && !f2_correct_f1_ghist) {
       // We trust our prediction of what the global history for the next branch should be
       s2_ghist := f2_predicted_ghist
@@ -502,7 +508,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
 
   val ras_read_idx = RegInit(0.U(log2Ceil(nRasEntries)))
   ras.io.read_idx := ras_read_idx
-  when (f3_ready && s2_valid && !f2_clear) {
+  when (s2_valid && !f2_clear) {
     ras_read_idx := s2_ghist.ras_idx
     ras.io.read_idx := s2_ghist.ras_idx
   }
@@ -524,6 +530,60 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   val s3_fsrc  = RegNext(s2_fsrc)
   val s3_tsrc  = RegNext(s2_tsrc)
 
+  val f3_bpd_resp = bpd.io.resp.f3
+  val f3_mask = fetchMask(s3_vpc)
+  val f3_redirects = (0 until fetchWidth) map { i =>
+    s3_valid && f3_mask(i) && f3_bpd_resp.preds(i).predicted_pc.valid &&
+    (f3_bpd_resp.preds(i).is_jal || 
+     (f3_bpd_resp.preds(i).is_br && f3_bpd_resp.preds(i).taken))
+  }
+  val f3_redirect_idx = PriorityEncoder(f3_redirects)
+  val f3_targs = f3_bpd_resp.preds.map(_.predicted_pc.bits)
+  val f3_do_redirect = f3_redirects.reduce(_||_) && useBPD.B
+  val f3_predicted_target = Mux(f3_do_redirect,
+                                f3_targs(f3_redirect_idx),
+                                nextFetch(s3_vpc))
+  val f3_predicted_ghist = s3_ghist.update(
+    f3_bpd_resp.preds.map(p => p.is_br && p.predicted_pc.valid).asUInt & f3_mask,
+    f3_bpd_resp.preds(f3_redirect_idx).taken && f3_do_redirect,
+    f3_bpd_resp.preds(f3_redirect_idx).is_br,
+    f3_redirect_idx,
+    f3_do_redirect,
+    s3_vpc,
+    false.B,
+    false.B
+  )
+
+  val f3_correct_f1_ghist = s1_ghist =/= f3_predicted_ghist && enableGHistStallRepair.B
+  val f3_correct_f2_ghist = s2_ghist =/= f3_predicted_ghist && enableGHistStallRepair.B
+
+  when (s3_valid && !f3_ready) {
+    s0_valid := true.B
+    s0_vpc   := s3_vpc
+    s0_ghist := s3_ghist
+    s0_tsrc  := s3_tsrc
+    f1_clear := true.B
+    f2_clear := true.B
+  } .elsewhen (s3_valid && f3_ready) {
+    when (s2_valid && s2_vpc === f3_predicted_target && !f3_correct_f2_ghist) {
+      s3_ghist := f3_predicted_ghist
+    } .elsewhen (!s2_valid && s1_valid && s1_vpc === f3_predicted_target && !f3_correct_f1_ghist) {
+      s2_ghist := f3_predicted_ghist
+    } .elsewhen ((s2_valid && (s2_vpc =/= f3_predicted_target || f3_correct_f2_ghist)) ||
+                 (!s2_valid && s1_valid && (s1_vpc =/= f3_predicted_target || f3_correct_f1_ghist)) ||
+                 (!s2_valid && !s1_valid)) {            
+      f2_clear := true.B
+      f1_clear := true.B
+
+      s0_valid := true.B
+      s0_vpc   := f3_predicted_target
+      s0_ghist := f3_predicted_ghist
+      s0_tsrc  := BSRC_3
+      s3_fsrc  := BSRC_3
+    }
+  }
+  
+  
   f3_ready := ptq.io.enq.ready
 
   ptq.io.enq.valid          := s3_valid
@@ -535,10 +595,18 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   ptq.io.enq.bits.f3        := bpd.io.resp.f3
   ptq.io.enq.bits.ras_resp  := ras.io.read_addr
 
-  
+  ptq.io.enq.bits.f2_vpc    := s2_vpc
+  ptq.io.enq.bits.f1_vpc    := s1_vpc
+  ptq.io.enq.bits.f2_ghist  := s2_ghist
+  ptq.io.enq.bits.f1_ghist := s1_ghist
+  ptq.io.enq.bits.f2_valid  := s2_valid
+  ptq.io.enq.bits.f1_valid  := s1_valid
+
+  /*
   when (ptq.io.enq.fire) {
     printf("Cycle %d enter ptq %x\n", debug_cycles.value, ptq.io.enq.bits.pc)
   }
+  */
   
 
 
@@ -565,6 +633,14 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   val f4_replay_ppc   = Wire(UInt())
   val f4_bpd_resp     = WireInit((0.U).asTypeOf(new BranchPredictionBundle))
   val f4_ras_resp     = WireInit(0.U(vaddrBitsExtended.W))
+
+  val f4_bpd_f1_vpc      = WireInit(0.U(vaddrBitsExtended.W))
+  val f4_bpd_f2_vpc      = WireInit(0.U(vaddrBitsExtended.W))
+  val f4_bpd_f1_ghist    = WireInit((0.U).asTypeOf(new GlobalHistory))
+  val f4_bpd_f2_ghist    = WireInit((0.U).asTypeOf(new GlobalHistory))
+  val f4_bpd_f1_valid    = WireInit(false.B)
+  val f4_bpd_f2_valid    = WireInit(false.B)
+
   
   when (ptq.io.deq.valid) {
     f4_valid     := true.B
@@ -574,8 +650,16 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     f4_tsrc      := ptq.io.deq.bits.tsrc
     f4_bpd_resp  := ptq.io.deq.bits.f3
     f4_ras_resp  := ptq.io.deq.bits.ras_resp
+
+    f4_bpd_f1_vpc := ptq.io.deq.bits.f1_vpc
+    f4_bpd_f2_vpc := ptq.io.deq.bits.f2_vpc
+    f4_bpd_f1_ghist := ptq.io.deq.bits.f1_ghist
+    f4_bpd_f2_ghist := ptq.io.deq.bits.f2_ghist
+    f4_bpd_f1_valid := ptq.io.deq.bits.f1_valid
+    f4_bpd_f2_valid := ptq.io.deq.bits.f2_valid
+
     f4_ready     := false.B
-    printf("Cycle %d deq from ptq %x with f4_vpc %x\n", debug_cycles.value, ptq.io.deq.bits.pc, f4_vpc)
+    // printf("Cycle %d deq from ptq %x with f4_vpc %x\n", debug_cycles.value, ptq.io.deq.bits.pc, f4_vpc)
   }
   /*
   when (f4_valid) {
@@ -596,16 +680,23 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   // **** F5 ****
   //    Translate VPC
   // --------------------------------------------------------
-  val f5_vpc       = RegNext(f4_vpc)
-  val f5_ghist     = RegNext(f4_ghist)
-  val f5_fsrc      = RegNext(f4_fsrc)
-  val f5_tsrc      = RegNext(f4_tsrc)
-  val f5_valid     = RegNext(f4_valid, false.B)
-  val f5_is_replay = RegNext(f4_is_replay)
-  val f5_is_sfence = RegNext(f4_is_sfence)
-  val f5_clear     = WireInit(false.B)
-  val f5_bpd_resp  = RegNext(f4_bpd_resp)
-  val f5_ras_resp  = RegNext(f4_ras_resp)
+  val f5_vpc        = RegNext(f4_vpc)
+  val f5_ghist      = RegNext(f4_ghist)
+  val f5_fsrc       = RegNext(f4_fsrc)
+  val f5_tsrc       = RegNext(f4_tsrc)
+  val f5_valid      = RegNext(f4_valid, false.B)
+  val f5_is_replay  = RegNext(f4_is_replay)
+  val f5_is_sfence  = RegNext(f4_is_sfence)
+  val f5_clear      = WireInit(false.B)
+  val f5_bpd_resp   = RegNext(f4_bpd_resp)
+  val f5_ras_resp   = RegNext(f4_ras_resp)
+
+  val f5_bpd_f1_vpc = RegNext(f4_bpd_f1_vpc)
+  val f5_bpd_f2_vpc = RegNext(f4_bpd_f2_vpc)
+  val f5_bpd_f1_ghist = RegNext(f4_bpd_f1_ghist)
+  val f5_bpd_f2_ghist = RegNext(f4_bpd_f2_ghist)
+  val f5_bpd_f1_valid = RegNext(f4_bpd_f1_valid)
+  val f5_bpd_f2_valid = RegNext(f4_bpd_f2_valid)
 
   tlb.io.req.valid            := (f5_valid && !f5_is_replay && !f5_clear) || f5_is_sfence
   tlb.io.req.bits.cmd         := DontCare
@@ -614,7 +705,6 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   tlb.io.req.bits.size        := log2Ceil(coreInstBytes * fetchWidth).U
   tlb.io.sfence               := RegNext(io.cpu.sfence)
   tlb.io.kill                 := false.B
-
 
   val f5_tlb_miss = !f5_is_replay && tlb.io.resp.miss
   val f5_tlb_resp = Mux(f5_is_replay, RegNext(f4_replay_resp), tlb.io.resp)
@@ -648,6 +738,14 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   val f6_tlb_miss = RegNext(f5_tlb_miss)
   val f6_is_replay = RegNext(f5_is_replay) && f6_valid
   val f6_xcpt  = f6_valid && (f6_tlb_resp.ae.inst || f6_tlb_resp.pf.inst) && !f6_is_replay
+  
+  val f6_bpd_f1_vpc = RegNext(f5_bpd_f1_vpc)
+  val f6_bpd_f2_vpc = RegNext(f5_bpd_f2_vpc)
+  val f6_bpd_f1_ghist = RegNext(f5_bpd_f1_ghist)
+  val f6_bpd_f2_ghist = RegNext(f5_bpd_f2_ghist)
+  val f6_bpd_f1_valid = RegNext(f5_bpd_f1_valid)
+  val f6_bpd_f2_valid = RegNext(f5_bpd_f2_valid)
+  
   val f7_ready = Wire(Bool())
 
   icache.io.s2_kill := f6_xcpt
@@ -658,6 +756,17 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     f4_vpc       := f6_vpc
     f4_bpd_resp  := f6_bpd_resp
     f4_is_replay := f6_valid && icache.io.resp.valid
+    f4_ghist     := f6_ghist
+    f4_tsrc      := f6_tsrc
+    f4_ras_resp  := f6_ras_resp
+
+    f4_bpd_f1_vpc := f6_bpd_f1_vpc
+    f4_bpd_f2_vpc := f6_bpd_f2_vpc
+    f4_bpd_f1_ghist := f6_bpd_f1_ghist
+    f4_bpd_f2_ghist := f6_bpd_f2_ghist
+    f4_bpd_f1_valid := f6_bpd_f1_valid
+    f4_bpd_f2_valid := f6_bpd_f2_valid
+
     f5_clear     := true.B
     // printf("redo icache access %x with f4_vpc %x\n", f6_vpc, f4_vpc)
   } .elsewhen(f6_valid && f7_ready) {
@@ -691,7 +800,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   }
   */
   // printf("ptq deq fire %x\n", ptq.io.deq.fire)
-  printf("Cycle %d f6_vpc %x with valid %d\n", debug_cycles.value, f6_vpc, f6_valid)
+  // printf("Cycle %d f6_vpc %x with valid %d\n", debug_cycles.value, f6_vpc, f6_valid)
 
   val f7_clear = WireInit(false.B)
   val f7 = withReset(reset.asBool || f7_clear) {
@@ -716,10 +825,19 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   f7.io.enq.bits.fsrc := f6_fsrc
   f7.io.enq.bits.tsrc := f6_tsrc
   f7.io.enq.bits.ras_resp := f6_ras_resp
+
+  f7.io.enq.bits.bpd_f1_vpc := f6_bpd_f1_vpc
+  f7.io.enq.bits.bpd_f2_vpc := f6_bpd_f2_vpc
+  f7.io.enq.bits.bpd_f1_ghist := f6_bpd_f1_ghist
+  f7.io.enq.bits.bpd_f2_ghist := f6_bpd_f2_ghist
+  f7.io.enq.bits.bpd_f1_valid := f6_bpd_f1_valid
+  f7.io.enq.bits.bpd_f2_valid := f6_bpd_f2_valid
   
+  /*
   when (f7.io.enq.valid) {
     printf("Cycle %d f7 enq %x %x\n", debug_cycles.value, f7.io.enq.bits.pc, f7.io.enq.bits.data)
   }
+  */
   
 
 
@@ -993,8 +1111,8 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   ras.io.write_idx   := WrapInc(f7_fetch_bundle.ghist.ras_idx, nRasEntries)
 
 
-  val f3_correct_f1_ghist = f5_ghist =/= f7_predicted_ghist && enableGHistStallRepair.B
-  val f3_correct_f2_ghist = f6_ghist =/= f7_predicted_ghist && enableGHistStallRepair.B
+  val f7_correct_f1_ghist = f7_imemresp.bpd_f1_ghist =/= f7_predicted_ghist && enableGHistStallRepair.B
+  val f7_correct_f2_ghist = f7_imemresp.bpd_f2_ghist =/= f7_predicted_ghist && enableGHistStallRepair.B
 
   when (f7.io.deq.valid && f8_ready) {
     when (f7_fetch_bundle.cfi_is_call && f7_fetch_bundle.cfi_idx.valid) {
@@ -1003,13 +1121,14 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     when (f7_redirects.reduce(_||_)) {
       f7_prev_is_half := false.B
     }
-    when (f6_valid && f6_vpc === f7_predicted_target && !f3_correct_f2_ghist) {
+    
+    when (f7_imemresp.bpd_f2_valid && f7_imemresp.bpd_f2_vpc === f7_predicted_target && !f7_correct_f2_ghist) {
       f7.io.enq.bits.ghist := f7_predicted_ghist
-    } .elsewhen (!f6_valid && f5_valid && f5_vpc === f7_predicted_target && !f3_correct_f1_ghist) {
+    } .elsewhen (!f7_imemresp.bpd_f2_valid && f7_imemresp.bpd_f1_valid && f7_imemresp.bpd_f1_vpc === f7_predicted_target && !f7_correct_f1_ghist) {
       f6_ghist := f7_predicted_ghist
-    } .elsewhen (( f6_valid &&  (f6_vpc =/= f7_predicted_target || f3_correct_f2_ghist)) ||
-          (!f6_valid &&  f5_valid && (f5_vpc =/= f7_predicted_target || f3_correct_f1_ghist)) ||
-          (!f6_valid && !f5_valid)) {
+    } .elsewhen ((f7_imemresp.bpd_f2_valid && (f7_imemresp.bpd_f2_vpc =/= f7_predicted_target || f7_correct_f2_ghist)) ||
+          (!f7_imemresp.bpd_f2_valid && f7_imemresp.bpd_f1_valid && (f7_imemresp.bpd_f1_vpc =/= f7_predicted_target || f7_correct_f1_ghist)) ||
+          (!f7_imemresp.bpd_f2_valid && !f7_imemresp.bpd_f1_valid)) {
       f2_clear := true.B
       f1_clear := true.B
       f3_clear := true.B
@@ -1024,6 +1143,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
       f4_is_replay := false.B
 
       f7_fetch_bundle.fsrc := BSRC_3
+      // printf("Cycle %d f7 redirect %x\n", debug_cycles.value, f7_predicted_target)
     }
   }
   
@@ -1101,10 +1221,11 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   f4.io.enq.bits  := f7_fetch_bundle
   f4.io.deq.ready := fb.io.enq.ready && ftq.io.enq.ready && !f4_delay
 
-  
+  /*
   when (f4.io.enq.valid) {
     printf("Cycle %d f8 enq %x\n", debug_cycles.value, f4.io.enq.bits.pc)
   }
+  */
   
 
   fb.io.enq.valid := f4.io.deq.valid && ftq.io.enq.ready && !f4_delay
@@ -1116,7 +1237,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     f4.io.deq.bits.shadowed_mask.asUInt
   ).asBools
 
-  
+  /*
   when (fb.io.enq.valid) {
     printf("Cycle %d fetch buffer %x %x %x %x %x\n", debug_cycles.value, fb.io.enq.bits.pc, 
     fb.io.enq.bits.exp_insts(0), 
@@ -1124,6 +1245,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     fb.io.enq.bits.exp_insts(2), 
     fb.io.enq.bits.exp_insts(3))
   }
+  */
   
   
 
@@ -1174,7 +1296,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     s0_vpc       := io.cpu.sfence.bits.addr
     f4_is_replay := false.B
     f4_is_sfence := true.B
-    printf("sfence redirect to %x\n", io.cpu.redirect_pc)
+    // printf("sfence redirect to %x\n", io.cpu.redirect_pc)
 
   }.elsewhen (io.cpu.redirect_flush) {
     fb.io.clear := true.B
@@ -1198,7 +1320,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     ftq.io.redirect.valid := io.cpu.redirect_val
     ftq.io.redirect.bits  := io.cpu.redirect_ftq_idx
 
-    printf("flush redirect to %x\n", io.cpu.redirect_pc)
+    // printf("flush redirect to %x\n", io.cpu.redirect_pc)
   }
 
   ftq.io.debug_ftq_idx := io.cpu.debug_ftq_idx
