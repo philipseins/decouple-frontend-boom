@@ -63,7 +63,7 @@ class PredictTargetQueue(implicit p: Parameters) extends BoomModule
 
     when (io.reset) {
       read_ptr := WrapInc(deq_ptr, num_entries)
-      printf("Cycle %d reset ptq\n", debug_cycles.value)
+      // printf("Cycle %d reset ptq\n", debug_cycles.value)
     }
 
     when (io.clear) {
@@ -71,7 +71,7 @@ class PredictTargetQueue(implicit p: Parameters) extends BoomModule
       deq_ptr := 0.U
       read_ptr := 0.U
       maybe_full := false.B
-      printf("Cycle %d clear ptq\n", debug_cycles.value)
+      // printf("Cycle %d clear ptq\n", debug_cycles.value)
     }
 
     io.deq.valid := !empty

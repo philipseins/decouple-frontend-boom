@@ -409,10 +409,10 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
       io.ifu.redirect_pc  := Mux(flush_typ === FlushTypes.eret,
                                  RegNext(RegNext(csr.io.evec)),
                                  csr.io.evec)
-      // printf("exception or eret redirect %x caused by %x\n", io.ifu.redirect_pc,
-      //        AlignPCToBoundary(io.ifu.get_pc(0).pc, icBlockBytes)
-      //        + RegNext(rob.io.flush.bits.pc_lob)
-      //        - Mux(RegNext(rob.io.flush.bits.edge_inst), 2.U, 0.U))
+      printf("exception or eret redirect %x caused by %x\n", io.ifu.redirect_pc,
+              AlignPCToBoundary(io.ifu.get_pc(0).pc, icBlockBytes)
+              + RegNext(rob.io.flush.bits.pc_lob)
+              - Mux(RegNext(rob.io.flush.bits.edge_inst), 2.U, 0.U))
     } .otherwise {
       val flush_pc = (AlignPCToBoundary(io.ifu.get_pc(0).pc, icBlockBytes)
                       + RegNext(rob.io.flush.bits.pc_lob)
@@ -420,7 +420,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
       val flush_pc_next = flush_pc + Mux(RegNext(rob.io.flush.bits.is_rvc), 2.U, 4.U)
       io.ifu.redirect_pc := Mux(FlushTypes.useSamePC(flush_typ),
                                 flush_pc, flush_pc_next)
-      // printf("refetch redirect %x caused by %x\n", io.ifu.redirect_pc, flush_pc)
+      printf("refetch redirect %x caused by %x\n", io.ifu.redirect_pc, flush_pc)
 
     }
     io.ifu.redirect_ftq_idx := RegNext(rob.io.flush.bits.ftq_idx)
@@ -435,7 +435,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
     val mispredict_target = Mux(brupdate.b2.pc_sel === PC_PLUS4, npc, bj_addr)
     io.ifu.redirect_val     := true.B
     io.ifu.redirect_pc      := mispredict_target
-    // printf("mispredict redirect %x caused by %x\n", io.ifu.redirect_pc, uop_maybe_pc)
+    printf("mispredict redirect %x caused by %x\n", io.ifu.redirect_pc, uop_maybe_pc)
     io.ifu.redirect_flush   := true.B
     io.ifu.redirect_ftq_idx := brupdate.b2.uop.ftq_idx
     val use_same_ghist = (brupdate.b2.cfi_type === CFI_BR &&
@@ -593,7 +593,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   } .otherwise {
     dec_finished_mask := dec_fire.asUInt | dec_finished_mask
   }
-  // val debug_cycles = freechips.rocketchip.util.WideCounter(32)
+  val debug_cycles = freechips.rocketchip.util.WideCounter(32)
   // for (w <- 0 until coreWidth) {
   //   when(dec_fire(w)){
   //     printf("cycles: %d, w: %d, pc: 0x%x, inst: 0x%x, opc: %d, rd: %d, rs1: %d, rs2: %d, wevent: %d\n", debug_cycles.value, w.U, dec_uops(w).debug_pc, dec_uops(w).inst, dec_uops(w).uopc, dec_uops(w).ldst, dec_uops(w).lrs1, dec_uops(w).lrs2, dec_uops(w).wevent)
@@ -1149,6 +1149,10 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   csr.io.tval := Mux(tval_valid,
     RegNext(encodeVirtualAddress(rob.io.com_xcpt.bits.badvaddr, rob.io.com_xcpt.bits.badvaddr)), 0.U)
 
+
+  when (csr.io.exception) {
+    printf("Cycle %d exception pc: %x, reason: %d\n", debug_cycles.value, csr.io.pc, csr.io.cause)
+  }
   // TODO move this function to some central location (since this is used elsewhere).
   def encodeVirtualAddress(a0: UInt, ea: UInt) =
     if (vaddrBitsExtended == vaddrBits) {
@@ -1491,6 +1495,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
       }
 
       when (rob.io.commit.arch_valids(w)) {
+        printf("Cycle %d ", debug_cycles.value)
         printf("%d 0x%x ",
           priv,
           Sext(rob.io.commit.uops(w).debug_pc(vaddrBits-1,0), xLen))

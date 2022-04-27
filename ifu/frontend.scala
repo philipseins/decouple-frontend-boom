@@ -663,6 +663,8 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     f4_bpd_f2_valid := ptq.io.read.bits.f2_valid
 
     // printf("Cycle %d read from ptq %x with f4_vpc %x\n", debug_cycles.value, ptq.io.read.bits.pc, f4_vpc)
+  } .otherwise {
+    f4_valid     := false.B
   }
   
   /*
@@ -721,10 +723,13 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   icache.io.s1_kill  := tlb.io.resp.miss || f5_clear
 
   when (f5_valid && !f5_tlb_miss) {
-    f4_valid := !(f5_tlb_resp.ae.inst || f5_tlb_resp.pf.inst)
+    when (f5_tlb_resp.ae.inst || f5_tlb_resp.pf.inst) {
+      f4_valid := false.B
+    }
     f4_is_replay := false.B
     read_ready   := !(f5_tlb_resp.ae.inst || f5_tlb_resp.pf.inst)
     // printf("Cycle %d !f5_tlb_miss %x read_ready: %d\n", debug_cycles.value, f5_vpc, read_ready)
+    // printf("Cycle %d vpc %x, ae %d, pf %d\n", debug_cycles.value, f5_vpc, f5_tlb_resp.ae.inst, f5_tlb_resp.pf.inst)
   }
 
   /*
@@ -780,13 +785,17 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
 
     f5_clear     := true.B
     ptq.io.reset := true.B
-    printf("Cycle %d redo icache access %x with f4_vpc %x valid: %d icache_valid: %d f7_ready: %d\n", debug_cycles.value, f6_vpc, f4_vpc, f6_valid, icache.io.resp.valid, f7_ready)
+    // printf("Cycle %d redo icache access %x with f4_vpc %x valid: %d icache_valid: %d f7_ready: %d\n", debug_cycles.value, f6_vpc, f4_vpc, f6_valid, icache.io.resp.valid, f7_ready)
   } .elsewhen(f6_valid && f7_ready) {
     when (!f5_valid) {
       f5_clear := true.B
-
-      f4_valid     := !((f6_tlb_resp.ae.inst || f6_tlb_resp.pf.inst) && !f6_is_replay)
+      when ((f6_tlb_resp.ae.inst || f6_tlb_resp.pf.inst) && !f6_is_replay) {
+        f4_valid := false.B
+      }
+      // f4_valid     := !((f6_tlb_resp.ae.inst || f6_tlb_resp.pf.inst) && !f6_is_replay)
+      read_ready := !((f6_tlb_resp.ae.inst || f6_tlb_resp.pf.inst) && !f6_is_replay)
       f4_is_replay := false.B
+
       /*
       when (f4_ready) { 
         printf("f6 f4_ready: true %x\n", f6_vpc)
@@ -805,7 +814,11 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   }
   f4_replay_resp := f6_tlb_resp
   f4_replay_ppc  := f6_ppc
-
+  /*
+  when (f6_valid && !f6_tlb_miss) {
+    printf("Cycle %d vpc %x, ae %d, pf %d\n", debug_cycles.value, f6_vpc, f6_tlb_resp.ae.inst, f6_tlb_resp.pf.inst)
+  }
+  */
   /*
   when (f6_valid) {
     printf("f6 vpc: %x", f6_vpc)
