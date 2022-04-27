@@ -47,6 +47,7 @@ case class BoomCoreParams(
   enableBTBFastRepair: Boolean = true,
   useAtomicsOnlyForIO: Boolean = false,
   ftq: FtqParameters = FtqParameters(),
+  ptq: PtqParameters = PtqParameters(),
   intToFpLatency: Int = 2,
   imulLatency: Int = 3,
   nPerfCounters: Int = 0,
@@ -168,6 +169,7 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
   val numStqEntries = boomParams.numStqEntries       // number of SAQ/SDQ entries
   val maxBrCount    = boomParams.maxBrCount          // number of branches we can speculate simultaneously
   val ftqSz         = boomParams.ftq.nEntries        // number of FTQ entries
+  val ptqSz         = boomParams.ptq.nEntries
   val ptqEntries    = boomParams.ptqEntries
   val numFetchBufferEntries = boomParams.numFetchBufferEntries // number of instructions that stored between fetch&decode
 

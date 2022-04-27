@@ -518,12 +518,14 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   //    pc && f3_bpd_resp enter the ptq
   // --------------------------------------------------------
   val f3_clear = WireInit(false.B)
+
+  val ptq = Module(new PredictTargetQueue)
+  ptq.io.clear := reset.asBool || f3_clear
   
-  val ptq = withReset(reset.asBool || f3_clear) {
-    Module(new Queue(new PredictBundle, ptqEntries, pipe=false, flow=false))}
 
+  val deq_ready = WireInit(false.B)
+  val read_ready = WireInit(true.B)
 
-  val f4_ready = WireInit(false.B)
   val s3_valid = RegNext(s2_valid && !f2_clear, false.B)
   val s3_vpc   = RegNext(s2_vpc)
   val s3_ghist = RegNext(s2_ghist)
@@ -598,7 +600,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   ptq.io.enq.bits.f2_vpc    := s2_vpc
   ptq.io.enq.bits.f1_vpc    := s1_vpc
   ptq.io.enq.bits.f2_ghist  := s2_ghist
-  ptq.io.enq.bits.f1_ghist := s1_ghist
+  ptq.io.enq.bits.f1_ghist  := s1_ghist
   ptq.io.enq.bits.f2_valid  := s2_valid
   ptq.io.enq.bits.f1_valid  := s1_valid
 
@@ -614,7 +616,9 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     bpd.io.f3_fire := true.B
   }
 
-  ptq.io.deq.ready := f4_ready
+  ptq.io.deq.ready := deq_ready
+  ptq.io.read.ready := read_ready
+  ptq.io.reset := false.B
 
   // --------------------------------------------------------
   // **** F4 ****
@@ -642,39 +646,42 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   val f4_bpd_f2_valid    = WireInit(false.B)
 
   
-  when (ptq.io.deq.valid) {
+  when (ptq.io.read.valid && read_ready) {
     f4_valid     := true.B
-    f4_vpc       := ptq.io.deq.bits.pc
-    f4_ghist     := ptq.io.deq.bits.ghist
-    f4_fsrc      := ptq.io.deq.bits.fsrc
-    f4_tsrc      := ptq.io.deq.bits.tsrc
-    f4_bpd_resp  := ptq.io.deq.bits.f3
-    f4_ras_resp  := ptq.io.deq.bits.ras_resp
+    f4_vpc       := ptq.io.read.bits.pc
+    f4_ghist     := ptq.io.read.bits.ghist
+    f4_fsrc      := ptq.io.read.bits.fsrc
+    f4_tsrc      := ptq.io.read.bits.tsrc
+    f4_bpd_resp  := ptq.io.read.bits.f3
+    f4_ras_resp  := ptq.io.read.bits.ras_resp
 
-    f4_bpd_f1_vpc := ptq.io.deq.bits.f1_vpc
-    f4_bpd_f2_vpc := ptq.io.deq.bits.f2_vpc
-    f4_bpd_f1_ghist := ptq.io.deq.bits.f1_ghist
-    f4_bpd_f2_ghist := ptq.io.deq.bits.f2_ghist
-    f4_bpd_f1_valid := ptq.io.deq.bits.f1_valid
-    f4_bpd_f2_valid := ptq.io.deq.bits.f2_valid
+    f4_bpd_f1_vpc := ptq.io.read.bits.f1_vpc
+    f4_bpd_f2_vpc := ptq.io.read.bits.f2_vpc
+    f4_bpd_f1_ghist := ptq.io.read.bits.f1_ghist
+    f4_bpd_f2_ghist := ptq.io.read.bits.f2_ghist
+    f4_bpd_f1_valid := ptq.io.read.bits.f1_valid
+    f4_bpd_f2_valid := ptq.io.read.bits.f2_valid
 
-    f4_ready     := false.B
-    // printf("Cycle %d deq from ptq %x with f4_vpc %x\n", debug_cycles.value, ptq.io.deq.bits.pc, f4_vpc)
+    // printf("Cycle %d read from ptq %x with f4_vpc %x\n", debug_cycles.value, ptq.io.read.bits.pc, f4_vpc)
   }
+  
   /*
   when (f4_valid) {
-    printf("f4 vpc: %x\n", f4_vpc)
+    printf("Cycle %d f4 vpc: %x\n", debug_cycles.value, f4_vpc)
   }
   */
+  
   // printf("f4 vpc: %x\n", f4_vpc)
 
   icache.io.req.valid     := f4_valid
   icache.io.req.bits.addr := f4_vpc
+  
   /*
   when (icache.io.req.valid) {
-    printf("icache request pc: %x\n", icache.io.req.bits.addr)
+    printf("Cycle %d icache request pc: %x\n", debug_cycles.value, icache.io.req.bits.addr)
   }
   */
+  
 
   // --------------------------------------------------------
   // **** F5 ****
@@ -716,13 +723,17 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   when (f5_valid && !f5_tlb_miss) {
     f4_valid := !(f5_tlb_resp.ae.inst || f5_tlb_resp.pf.inst)
     f4_is_replay := false.B
+    read_ready   := !(f5_tlb_resp.ae.inst || f5_tlb_resp.pf.inst)
+    // printf("Cycle %d !f5_tlb_miss %x read_ready: %d\n", debug_cycles.value, f5_vpc, read_ready)
   }
 
   /*
   when (f5_valid) {
-    printf("f5 vpc: %x\n", f5_vpc)
+    printf("Cycle %d f5 vpc: %x\n", debug_cycles.value, f5_vpc)
   }
   */
+  
+  
 
 
   val f6_valid = RegNext(f5_valid && !f5_clear, false.B)
@@ -768,7 +779,8 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     f4_bpd_f2_valid := f6_bpd_f2_valid
 
     f5_clear     := true.B
-    // printf("redo icache access %x with f4_vpc %x\n", f6_vpc, f4_vpc)
+    ptq.io.reset := true.B
+    printf("Cycle %d redo icache access %x with f4_vpc %x valid: %d icache_valid: %d f7_ready: %d\n", debug_cycles.value, f6_vpc, f4_vpc, f6_valid, icache.io.resp.valid, f7_ready)
   } .elsewhen(f6_valid && f7_ready) {
     when (!f5_valid) {
       f5_clear := true.B
@@ -780,13 +792,16 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
         printf("f6 f4_ready: true %x\n", f6_vpc)
       }
       */
+      // printf("Cycle %d f5_valid false f4_valid: %d, tlb %d, replay %d\n", debug_cycles.value, f4_valid, (f6_tlb_resp.ae.inst || f6_tlb_resp.pf.inst), f6_is_replay)
     }
     when (icache.io.resp.valid) {
-      f5_clear        := true.B
       f4_is_replay    := false.B
-      f4_ready        := true.B
-      f4_valid        := false.B
+      deq_ready       := true.B
+      // printf("Cycle %d icache access success\n", debug_cycles.value)
     }
+    ptq.io.reset := false.B
+  }. otherwise {
+    ptq.io.reset := false.B
   }
   f4_replay_resp := f6_tlb_resp
   f4_replay_ppc  := f6_ppc
@@ -838,7 +853,6 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     printf("Cycle %d f7 enq %x %x\n", debug_cycles.value, f7.io.enq.bits.pc, f7.io.enq.bits.data)
   }
   */
-  
 
 
   // The BPD resp comes in f3
@@ -1143,7 +1157,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
       f4_is_replay := false.B
 
       f7_fetch_bundle.fsrc := BSRC_3
-      // printf("Cycle %d f7 redirect %x\n", debug_cycles.value, f7_predicted_target)
+      // printf("Cycle %d f7 redirect %x by %x\n", debug_cycles.value, f7_predicted_target, f7_imemresp.pc)
     }
   }
   
@@ -1320,7 +1334,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     ftq.io.redirect.valid := io.cpu.redirect_val
     ftq.io.redirect.bits  := io.cpu.redirect_ftq_idx
 
-    // printf("flush redirect to %x\n", io.cpu.redirect_pc)
+    // printf("Cycle %d flush redirect to %x\n", debug_cycles.value, io.cpu.redirect_pc)
   }
 
   ftq.io.debug_ftq_idx := io.cpu.debug_ftq_idx
