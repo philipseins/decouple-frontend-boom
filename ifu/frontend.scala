@@ -1320,7 +1320,9 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     f4_valid    := false.B
 
     s0_valid     := false.B
+    f4_valid     := false.B
     s0_vpc       := io.cpu.sfence.bits.addr
+    f4_vpc       := io.cpu.sfence.bits.addr
     f4_is_replay := false.B
     f4_is_sfence := true.B
     // printf("sfence redirect to %x\n", io.cpu.redirect_pc)

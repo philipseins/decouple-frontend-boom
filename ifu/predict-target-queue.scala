@@ -81,10 +81,11 @@ class PredictTargetQueue(implicit p: Parameters) extends BoomModule
     io.deq.bits := ram(deq_ptr)
     io.read.bits  := ram(read_ptr)
 
-    
+    /*
     printf("Cycle %d enq_ptr: %d, deq_ptr: %d, read_ptr: %d\n", debug_cycles.value, enq_ptr, deq_ptr, read_ptr)
     for (i <- 0 until num_entries) {
       val ptqpc = ram(i).pc
       printf("Cycle %d PTQ entry %d: %x\n", debug_cycles.value, i.U(log2Ceil(num_entries).W), ptqpc)
     }
+    */
 }

@@ -394,9 +394,11 @@ class ALUUnit(isJmpUnit: Boolean = false, numStages: Int = 1, dataWidth: Int)(im
 
   brinfo.jalr_target    := DontCare
 
+  /*
   when (is_br) {
     printf("pc: %x, rs1: %x, rs2: %x, is_taken: %d, mispredict : %d\n", uop.debug_pc, rs1, rs2, is_taken, mispredict)
   }
+  */
 
   // Branch/Jump Target Calculation
   // For jumps we read the FTQ, and can calculate the target
