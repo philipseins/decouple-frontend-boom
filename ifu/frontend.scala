@@ -294,6 +294,8 @@ class BoomFrontendIO(implicit p: Parameters) extends BoomBundle
   val flush_icache = Output(Bool())
 
   val perf = Input(new FrontendPerfEvents)
+  
+  val enq_fb = Input(Bool())
 }
 
 /**
@@ -953,6 +955,8 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     ras.io.write_idx   := ftq.io.ras_update_idx
     ras.io.write_addr  := ftq.io.ras_update_pc
   }
+
+  io.cpu.enq_fb := fb.io.enq.valid
 
 
   // -------------------------------------------------------

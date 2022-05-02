@@ -1099,9 +1099,9 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   used_event_sigs(14) := delay_sum_valid(br_masks & loop_flip_masks)
   used_event_sigs(15) := delay_sum_valid(br_masks & loop_flip_masks & (loop_taken_masks ^ taken_masks))
 
-  used_event_sigs_high(0) := used_event_sigs(0)  //cycles
-  used_event_sigs_high(1) := used_event_sigs(1) // commit inst
-  used_event_sigs_high(2) := used_event_sigs(2)
+  used_event_sigs_high(0) := Mux(io.ifu.perf.acquire, 1.U, 0.U)
+  used_event_sigs_high(1) := Mux(b2.mispredict, 1.U, 0.U)
+  used_event_sigs_high(2) := Mux(io.ifu.enq_fb, 1.U, 0.U)
   used_event_sigs_high(3) := used_event_sigs(3)
   used_event_sigs_high(4) := used_event_sigs(4)
   used_event_sigs_high(5) := used_event_sigs(5)
