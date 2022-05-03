@@ -29,6 +29,7 @@ class PredictTargetQueue(implicit p: Parameters) extends BoomModule
         val read = new DecoupledIO(new PredictBundle())
         val clear = Input(Bool())
         val reset = Input(Bool())
+        val count = Output(UInt(log2Ceil(num_entries + 1).W))
     })
     val ram = Mem(num_entries, new PredictBundle)
     val enq_ptr = RegInit(0.U(log2Ceil(num_entries).W))
@@ -88,4 +89,6 @@ class PredictTargetQueue(implicit p: Parameters) extends BoomModule
       printf("Cycle %d PTQ entry %d: %x\n", debug_cycles.value, i.U(log2Ceil(num_entries).W), ptqpc)
     }
     */
+    val ptr_diff = enq_ptr - deq_ptr
+    io.count := Mux(maybe_full && ptr_match, num_entries.U, 0.U) | ptr_diff
 }

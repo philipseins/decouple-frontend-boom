@@ -321,6 +321,16 @@ class BoomFrontendIO(implicit p: Parameters) extends BoomBundle
   val flush_icache = Output(Bool())
 
   val perf = Input(new FrontendPerfEvents)
+
+  val enq_fb = Input(Bool())
+  val ptq_clear = Input(Bool())
+  val ptq_empty = Input(Bool())
+  val ptq_full = Input(Bool())
+  val ptq_three = Input(Bool())
+  val ptq_six = Input(Bool())
+  val ptq_nine = Input(Bool())
+  val ptq_twelve = Input(Bool())
+  val ptq_fifteen = Input(Bool())
 }
 
 /**
@@ -521,7 +531,15 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
 
   val ptq = Module(new PredictTargetQueue)
   ptq.io.clear := reset.asBool || f3_clear
-  
+
+  io.cpu.ptq_clear   := ptq.io.clear
+  io.cpu.ptq_empty   := ptq.io.count === 0.U(log2Ceil(ptqSz + 1).W)
+  io.cpu.ptq_full    := ptq.io.count === ptqSz.U(log2Ceil(ptqSz + 1).W)
+  io.cpu.ptq_three   := ptq.io.count <= 3.U(log2Ceil(ptqSz + 1).W) && ptq.io.count > 0.U(log2Ceil(ptqSz + 1).W)
+  io.cpu.ptq_six     := ptq.io.count <= 6.U(log2Ceil(ptqSz + 1).W) && ptq.io.count > 3.U(log2Ceil(ptqSz + 1).W)
+  io.cpu.ptq_nine    := ptq.io.count <= 9.U(log2Ceil(ptqSz + 1).W) && ptq.io.count > 6.U(log2Ceil(ptqSz + 1).W)
+  io.cpu.ptq_twelve  := ptq.io.count <= 12.U(log2Ceil(ptqSz + 1).W) && ptq.io.count > 9.U(log2Ceil(ptqSz + 1).W)
+  io.cpu.ptq_fifteen := ptq.io.count <= 15.U(log2Ceil(ptqSz + 1).W) && ptq.io.count > 12.U(log2Ceil(ptqSz + 1).W)
 
   val deq_ready = WireInit(false.B)
   val read_ready = WireInit(true.B)
@@ -1294,6 +1312,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     ras.io.write_addr  := ftq.io.ras_update_pc
   }
 
+  io.cpu.enq_fb := fb.io.enq.valid
 
   // -------------------------------------------------------
   // **** To Core (F5) ****
