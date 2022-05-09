@@ -1089,7 +1089,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   val loop_hit_masks    = VecInit(rob.io.commit.uops.map(_.loop_hit)).asUInt
   val loop_flip_masks   = VecInit(rob.io.commit.uops.map(_.loop_flip)).asUInt
   val loop_taken_masks  = VecInit(rob.io.commit.uops.map(_.loop_taken)).asUInt
-
+  
   used_event_sigs(8)  := delay_sum_valid(jalr_masks & (~ret_masks).asUInt & btb_hit_masks)
   used_event_sigs(9)  := delay_sum_valid(jalr_masks & (~ret_masks).asUInt & btb_hit_masks & bsrc_c_masks)
   used_event_sigs(10) := delay_sum_valid(br_masks & loop_hit_masks)
@@ -1100,15 +1100,15 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   used_event_sigs(15) := delay_sum_valid(br_masks & loop_flip_masks & (loop_taken_masks ^ taken_masks))
 
   used_event_sigs_high(0) := Mux(io.ifu.perf.acquire, 1.U, 0.U)
-  used_event_sigs_high(1) := Mux(b2.mispredict, 1.U, 0.U)
-  used_event_sigs_high(2) := Mux(io.ifu.enq_fb, 1.U, 0.U)
-  used_event_sigs_high(3) := used_event_sigs(3)
-  used_event_sigs_high(4) := used_event_sigs(4)
-  used_event_sigs_high(5) := used_event_sigs(5)
+  used_event_sigs_high(1) := Mux(io.ifu.icache_access, 1.U, 0.U)
+  used_event_sigs_high(2) := Mux(b2.mispredict, 1.U, 0.U)
+  used_event_sigs_high(3) := Mux(io.ifu.enq_fb, 1.U, 0.U)
+  used_event_sigs_high(4) := Mux(io.ifu.deq_fb, 1.U, 0.U)
+  used_event_sigs_high(5) := Mux(io.ifu.clear_fb, 1.U, 0.U)
   used_event_sigs_high(6) := used_event_sigs(6)
   used_event_sigs_high(7) := used_event_sigs(7)
-
   used_event_sigs_high(8) := used_event_sigs(8)
+
   used_event_sigs_high(9) := used_event_sigs(9)
   used_event_sigs_high(10) := used_event_sigs(10)
   used_event_sigs_high(11) := used_event_sigs(11)
