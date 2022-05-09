@@ -1074,13 +1074,14 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   val ret_masks    = VecInit(rob.io.commit.uops.map(_.is_ret)).asUInt
   val bsrc_c_masks = VecInit(rob.io.commit.uops.map(_.debug_fsrc === BSRC_C)).asUInt
 
+  /*
   used_event_sigs(2) := delay_sum_valid(br_masks)   //commit br instruciotns
   used_event_sigs(3) := delay_sum_valid(jalr_masks) //commit jalr instruciotns
   used_event_sigs(4) := delay_sum_valid(ret_masks)  //commit ret instructions
   used_event_sigs(5) := delay_sum_valid(br_masks   & bsrc_c_masks) //ALU detect: br misprediction
   used_event_sigs(6) := delay_sum_valid(jalr_masks & bsrc_c_masks) //ALU detect: jalr misprediction
   used_event_sigs(7) := delay_sum_valid(ret_masks  & bsrc_c_masks) //ALU detect: ret misprediction
-
+  */
   val taken_masks       = VecInit(rob.io.commit.uops.map(_.taken)).asUInt
   val btb_hit_masks     = VecInit(rob.io.commit.uops.map(_.btb_hit)).asUInt
   val bim_taken_masks   = VecInit(rob.io.commit.uops.map(_.bim_taken)).asUInt
@@ -1090,6 +1091,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   val loop_flip_masks   = VecInit(rob.io.commit.uops.map(_.loop_flip)).asUInt
   val loop_taken_masks  = VecInit(rob.io.commit.uops.map(_.loop_taken)).asUInt
   
+  /*
   used_event_sigs(8)  := delay_sum_valid(jalr_masks & (~ret_masks).asUInt & btb_hit_masks)
   used_event_sigs(9)  := delay_sum_valid(jalr_masks & (~ret_masks).asUInt & btb_hit_masks & bsrc_c_masks)
   used_event_sigs(10) := delay_sum_valid(br_masks & loop_hit_masks)
@@ -1098,7 +1100,15 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   used_event_sigs(13) := delay_sum_valid(br_masks & tage_hit_masks & (tage_taken_masks ^ taken_masks))
   used_event_sigs(14) := delay_sum_valid(br_masks & loop_flip_masks)
   used_event_sigs(15) := delay_sum_valid(br_masks & loop_flip_masks & (loop_taken_masks ^ taken_masks))
+  */
 
+  used_event_sigs(2) := Mux(io.ifu.perf.acquire, 1.U, 0.U)
+  used_event_sigs(3) := Mux(io.ifu.icache_access, 1.U, 0.U)
+  used_event_sigs(4) := Mux(b2.mispredict, 1.U, 0.U)
+  used_event_sigs(5) := Mux(io.ifu.enq_fb, 1.U, 0.U)
+  used_event_sigs(6) := Mux(io.ifu.deq_fb, 1.U, 0.U)
+  used_event_sigs(7) := Mux(io.ifu.clear_fb, 1.U, 0.U)
+  /*
   used_event_sigs_high(0) := Mux(io.ifu.perf.acquire, 1.U, 0.U)
   used_event_sigs_high(1) := Mux(io.ifu.icache_access, 1.U, 0.U)
   used_event_sigs_high(2) := Mux(b2.mispredict, 1.U, 0.U)
@@ -1116,6 +1126,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   used_event_sigs_high(13) := used_event_sigs(13)
   used_event_sigs_high(14) := used_event_sigs(14)
   used_event_sigs_high(15) := used_event_sigs(15)
+  */
 
   for (w <- 0 until 16) {
     event_counters.io.event_signals(w) := used_event_sigs(w)
