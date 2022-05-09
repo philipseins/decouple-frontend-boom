@@ -322,7 +322,10 @@ class BoomFrontendIO(implicit p: Parameters) extends BoomBundle
 
   val perf = Input(new FrontendPerfEvents)
 
+  val icache_access = Input(Bool())
   val enq_fb = Input(Bool())
+  val deq_fb = Input(Bool())
+  val 
   val ptq_clear = Input(Bool())
   val ptq_empty = Input(Bool())
   val ptq_full = Input(Bool())
