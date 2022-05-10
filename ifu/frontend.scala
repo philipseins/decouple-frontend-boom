@@ -325,7 +325,7 @@ class BoomFrontendIO(implicit p: Parameters) extends BoomBundle
   val icache_access = Input(Bool())
   val enq_fb = Input(Bool())
   val deq_fb = Input(Bool())
-  val 
+  val clear_fb = Input(Bool())
   val ptq_clear = Input(Bool())
   val ptq_empty = Input(Bool())
   val ptq_full = Input(Bool())
@@ -334,6 +334,7 @@ class BoomFrontendIO(implicit p: Parameters) extends BoomBundle
   val ptq_nine = Input(Bool())
   val ptq_twelve = Input(Bool())
   val ptq_fifteen = Input(Bool())
+  val ptq_count = Input(UInt())
 }
 
 /**
@@ -392,6 +393,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   io.ptw <> tlb.io.ptw
   io.cpu.perf.tlbMiss := io.ptw.req.fire
   io.cpu.perf.acquire := icache.io.perf.acquire
+  io.cpu.icache_access := icache.io.req.fire()
 
   // --------------------------------------------------------
   // **** NextPC Select (F0) ****
@@ -543,7 +545,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   io.cpu.ptq_nine    := ptq.io.count <= 9.U(log2Ceil(ptqSz + 1).W) && ptq.io.count > 6.U(log2Ceil(ptqSz + 1).W)
   io.cpu.ptq_twelve  := ptq.io.count <= 12.U(log2Ceil(ptqSz + 1).W) && ptq.io.count > 9.U(log2Ceil(ptqSz + 1).W)
   io.cpu.ptq_fifteen := ptq.io.count <= 15.U(log2Ceil(ptqSz + 1).W) && ptq.io.count > 12.U(log2Ceil(ptqSz + 1).W)
-
+  io.cpu.ptq_count   := ptq.io.count
   val deq_ready = WireInit(false.B)
   val read_ready = WireInit(true.B)
 
@@ -1134,7 +1136,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
 
   val f7_predicted_target = Mux(f7_redirects.reduce(_||_),
     Mux(f7_fetch_bundle.cfi_is_ret && useBPD.B && useRAS.B,
-      ras.io.read_addr,
+      f7_imemresp.ras_resp,
       f7_targs(PriorityEncoder(f7_redirects))
     ),
     nextFetch(f7_fetch_bundle.pc)
@@ -1315,7 +1317,9 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     ras.io.write_addr  := ftq.io.ras_update_pc
   }
 
-  io.cpu.enq_fb := fb.io.enq.valid
+  io.cpu.enq_fb := fb.io.enq.fire()
+  io.cpu.deq_fb := fb.io.deq.fire()
+  io.cpu.clear_fb := fb.io.clear
 
   // -------------------------------------------------------
   // **** To Core (F5) ****
