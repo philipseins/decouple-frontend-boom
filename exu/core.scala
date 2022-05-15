@@ -1129,13 +1129,18 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   used_event_sigs(7) := Mux(io.ifu.clear_fb, 1.U, 0.U)
   used_event_sigs(8) := Mux(io.ifu.ptq_empty, 1.U, 0.U)
   used_event_sigs(9) := Mux(io.ifu.ptq_full, 1.U, 0.U)
-  used_event_sigs(10) := Mux(io.ifu.ptq_three, 1.U, 0.U)
-  used_event_sigs(11) := Mux(io.ifu.ptq_six, 1.U, 0.U)
-  used_event_sigs(12) := Mux(io.ifu.ptq_nine, 1.U, 0.U)
-  used_event_sigs(13) := Mux(io.ifu.ptq_twelve, 1.U, 0.U)
-  used_event_sigs(14) := Mux(io.ifu.ptq_fifteen, 1.U, 0.U)
-  used_event_sigs(15) := Mux(io.ifu.ptq_clear, 1.U, 0.U)
-  used_event_sigs_high(0) := Mux(io.ifu.ptq_clear, io.ifu.ptq_count, 0.U)
+  used_event_sigs(10) := Mux(io.ifu.ptq_quarter, 1.U, 0.U)
+  used_event_sigs(11) := Mux(io.ifu.ptq_half, 1.U, 0.U)
+  used_event_sigs(12) := Mux(io.ifu.ptq_half_quarter, 1.U, 0.U)
+  used_event_sigs(13) := Mux(io.ifu.ptq_nearfull, 1.U, 0.U)
+  used_event_sigs(14) := Mux(io.ifu.ptq_clear, 1.U, 0.U)
+  used_event_sigs(15) := Mux(io.ifu.ptq_clear, io.ifu.ptq_count, 0.U)
+  used_event_sigs_high(0) := delay_sum_valid(br_masks)   //commit br instruciotns
+  used_event_sigs_high(1) := delay_sum_valid(jalr_masks) //commit jalr instruciotns
+  used_event_sigs_high(2) := delay_sum_valid(ret_masks)  //commit ret instructions
+  used_event_sigs_high(3) := delay_sum_valid(br_masks   & bsrc_c_masks) //ALU detect: br misprediction
+  used_event_sigs_high(4) := delay_sum_valid(jalr_masks & bsrc_c_masks) //ALU detect: jalr misprediction
+  used_event_sigs_high(5) := delay_sum_valid(ret_masks  & bsrc_c_masks) //ALU detect: ret misprediction
 
   for (w <- 0 until 16) {
     event_counters.io.event_signals(w) := used_event_sigs(w)

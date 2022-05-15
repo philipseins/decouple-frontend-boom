@@ -329,11 +329,10 @@ class BoomFrontendIO(implicit p: Parameters) extends BoomBundle
   val ptq_clear = Input(Bool())
   val ptq_empty = Input(Bool())
   val ptq_full = Input(Bool())
-  val ptq_three = Input(Bool())
-  val ptq_six = Input(Bool())
-  val ptq_nine = Input(Bool())
-  val ptq_twelve = Input(Bool())
-  val ptq_fifteen = Input(Bool())
+  val ptq_quarter = Input(Bool())
+  val ptq_half = Input(Bool())
+  val ptq_half_quarter = Input(Bool())
+  val ptq_nearfull = Input(Bool())
   val ptq_count = Input(UInt())
 }
 
@@ -537,15 +536,14 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   val ptq = Module(new PredictTargetQueue)
   ptq.io.clear := reset.asBool || f3_clear
 
-  io.cpu.ptq_clear   := ptq.io.clear
-  io.cpu.ptq_empty   := ptq.io.count === 0.U(log2Ceil(ptqSz + 1).W)
-  io.cpu.ptq_full    := ptq.io.count === ptqSz.U(log2Ceil(ptqSz + 1).W)
-  io.cpu.ptq_three   := ptq.io.count <= 3.U(log2Ceil(ptqSz + 1).W) && ptq.io.count > 0.U(log2Ceil(ptqSz + 1).W)
-  io.cpu.ptq_six     := ptq.io.count <= 6.U(log2Ceil(ptqSz + 1).W) && ptq.io.count > 3.U(log2Ceil(ptqSz + 1).W)
-  io.cpu.ptq_nine    := ptq.io.count <= 9.U(log2Ceil(ptqSz + 1).W) && ptq.io.count > 6.U(log2Ceil(ptqSz + 1).W)
-  io.cpu.ptq_twelve  := ptq.io.count <= 12.U(log2Ceil(ptqSz + 1).W) && ptq.io.count > 9.U(log2Ceil(ptqSz + 1).W)
-  io.cpu.ptq_fifteen := ptq.io.count <= 15.U(log2Ceil(ptqSz + 1).W) && ptq.io.count > 12.U(log2Ceil(ptqSz + 1).W)
-  io.cpu.ptq_count   := ptq.io.count
+  io.cpu.ptq_clear        := ptq.io.clear
+  io.cpu.ptq_empty        := ptq.io.count === 0.U(log2Ceil(ptqSz + 1).W)
+  io.cpu.ptq_full         := ptq.io.count === ptqSz.U(log2Ceil(ptqSz + 1).W)
+  io.cpu.ptq_quarter      := ptq.io.count <= (ptqSz / 4).U(log2Ceil(ptqSz + 1).W) && ptq.io.count > 0.U(log2Ceil(ptqSz + 1).W)
+  io.cpu.ptq_half         := ptq.io.count <= (ptqSz / 2).U(log2Ceil(ptqSz + 1).W) && ptq.io.count > (ptqSz / 4).U(log2Ceil(ptqSz + 1).W)
+  io.cpu.ptq_half_quarter := ptq.io.count <= (ptqSz * 3 / 4).U(log2Ceil(ptqSz + 1).W) && ptq.io.count > (ptqSz / 2).U(log2Ceil(ptqSz + 1).W)
+  io.cpu.ptq_nearfull     := ptq.io.count < ptqSz.U(log2Ceil(ptqSz + 1).W) && ptq.io.count > (ptqSz * 3 / 4).U(log2Ceil(ptqSz + 1).W)
+  io.cpu.ptq_count        := ptq.io.count
   val deq_ready = WireInit(false.B)
   val read_ready = WireInit(true.B)
 
