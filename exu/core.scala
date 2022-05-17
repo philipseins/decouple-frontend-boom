@@ -124,7 +124,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
                             Seq(true))) // The jmp unit is always bypassable
   pregfile.io := DontCare // Only use the IO if enableSFBOpt
 
-  //chw: for event
+  // chw: for event
   val event_counters = Module(new EventCounter(issue_units.map(_.issueWidth).sum, exe_units.count(_.hasAlu)))
   // wb arbiter for the 0th ll writeback
   // TODO: should this be a multi-arb?
@@ -407,10 +407,12 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
       io.ifu.redirect_pc  := Mux(flush_typ === FlushTypes.eret,
                                  RegNext(RegNext(csr.io.evec)),
                                  csr.io.evec)
-      // printf("exception or eret redirect %x caused by %x\n", io.ifu.redirect_pc, 
-      //         AlignPCToBoundary(io.ifu.get_pc(0).pc, icBlockBytes) 
-      //         + RegNext(rob.io.flush.bits.pc_lob) 
-      //         - Mux(RegNext(rob.io.flush.bits.edge_inst), 2.U, 0.U))
+      /*            
+      printf("Exception or Eret redirect to %x caused by %x\n", io.ifu.redirect_pc, 
+              AlignPCToBoundary(io.ifu.get_pc(0).pc, icBlockBytes) 
+              + RegNext(rob.io.flush.bits.pc_lob) 
+              - Mux(RegNext(rob.io.flush.bits.edge_inst), 2.U, 0.U))
+      */
     } .otherwise {
       val flush_pc = (AlignPCToBoundary(io.ifu.get_pc(0).pc, icBlockBytes)
                       + RegNext(rob.io.flush.bits.pc_lob)
@@ -419,8 +421,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
       io.ifu.redirect_pc := Mux(FlushTypes.useSamePC(flush_typ),
                                 flush_pc, flush_pc_next)
       
-      // printf("refetch redirect %x caused by %x\n", io.ifu.redirect_pc, flush_pc);
-
+      // printf("Flush and Refetch redirect to %x caused by %x\n", io.ifu.redirect_pc, flush_pc);
     }
     io.ifu.redirect_ftq_idx := RegNext(rob.io.flush.bits.ftq_idx)
   } .elsewhen (brupdate.b2.mispredict && !RegNext(rob.io.flush.valid)) {
@@ -437,7 +438,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
     io.ifu.redirect_flush   := true.B
     io.ifu.redirect_ftq_idx := brupdate.b2.uop.ftq_idx
 
-    // printf("mispredict redirect %x caused by %x\n", io.ifu.redirect_pc, uop_maybe_pc)
+    // printf("Mispredict redirect to %x caused by %x\n", io.ifu.redirect_pc, uop_maybe_pc)
     val use_same_ghist = (brupdate.b2.cfi_type === CFI_BR &&
                           !brupdate.b2.taken &&
                           bankAlign(block_pc) === bankAlign(npc))
@@ -593,7 +594,9 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   } .otherwise {
     dec_finished_mask := dec_fire.asUInt | dec_finished_mask
   }
+
   val debug_cycles = freechips.rocketchip.util.WideCounter(32)
+  
   // for (w <- 0 until coreWidth) {
   //   when(dec_fire(w)){
   //     printf("cycles: %d, w: %d, pc: 0x%x, inst: 0x%x, opc: %d, rd: %d, rs1: %d, rs2: %d, wevent: %d\n", debug_cycles.value, w.U, dec_uops(w).debug_pc, dec_uops(w).inst, dec_uops(w).uopc, dec_uops(w).ldst, dec_uops(w).lrs1, dec_uops(w).lrs2, dec_uops(w).wevent)
