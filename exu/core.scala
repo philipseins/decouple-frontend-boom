@@ -394,7 +394,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   //       ERETs are reported to the CSR two cycles before we send the flush
   //       Exceptions are reported to the CSR on the cycle we send the flush
   // This discrepency should be resolved elsewhere.
-  when (RegNext(rob.io.flush.valid)) {
+  when (RegNext(rob.io.flush.valid)) {                                                                                                                                                                                                                                                                                                                                                
     io.ifu.redirect_val   := true.B
     io.ifu.redirect_flush := true.B
     val flush_typ = RegNext(rob.io.flush.bits.flush_typ)
@@ -1067,8 +1067,8 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   val used_event_sigs = WireInit(VecInit(Seq.fill(16) { 0.U(4.W) }))
   val used_event_sigs_high = WireInit(VecInit(Seq.fill(16) { 0.U(4.W) }))
 
-  used_event_sigs(0) := 1.U
-  used_event_sigs(1) := RegNext(PopCount(rob.io.commit.arch_valids.asUInt))
+  used_event_sigs(0) := 1.U // #cycle
+  used_event_sigs(1) := RegNext(PopCount(rob.io.commit.arch_valids.asUInt)) // #commit-inst
 
   def delay_sum_valid(mask: UInt) = RegNext(PopCount(rob.io.commit.arch_valids.asUInt & mask))
 
@@ -1105,19 +1105,35 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   used_event_sigs(15) := delay_sum_valid(br_masks & loop_flip_masks & (loop_taken_masks ^ taken_masks))
   */
 
-  used_event_sigs(2) := Mux(io.ifu.perf.acquire, 1.U, 0.U)
-  used_event_sigs(3) := Mux(io.ifu.icache_access, 1.U, 0.U)
-  used_event_sigs(4) := Mux(b2.mispredict, 1.U, 0.U)
-  used_event_sigs(5) := Mux(io.ifu.enq_fb, 1.U, 0.U)
-  used_event_sigs(6) := Mux(io.ifu.deq_fb, 1.U, 0.U)
-  used_event_sigs(7) := Mux(io.ifu.clear_fb, 1.U, 0.U)
+  used_event_sigs(2) := Mux(io.ifu.enq_fb, io.ifu.enq_uop_count, 0.U)                         // #uop-write-fb
+  used_event_sigs(3) := Mux(io.ifu.enq_fb_valid, 1.U, 0.U)                                    // #cycle-fb-enq-valid
+  used_event_sigs(4) := Mux(io.ifu.enq_fb_ready, 1.U, 0.U)                                    // #cycle-fb-enq-ready
+  used_event_sigs(5) := Mux(io.ifu.clr_fb, 1.U, 0.U)                                          // #cycle-clear-fb
+  used_event_sigs(6) := Mux(io.ifu.sfence.valid, 1.U, 0.U)                                    // #cycle-clear-sfence
+  used_event_sigs(7) := Mux(io.ifu.redirect_flush, 1.U, 0.U)                                  // #cycle-clear-redirect
+  used_event_sigs(8) := Mux(RegNext(rob.io.flush.valid), 1.U, 0.U)                            // #cycle-redirect-except-refetch
+  used_event_sigs(9) := Mux(brupdate.b2.mispredict && !RegNext(rob.io.flush.valid), 1.U, 0.U) // #cycle-redirect-mispredict
+  used_event_sigs(10) := Mux(rob.io.flush_frontend || brupdate.b1.mispredict_mask =/= 0.U, 1.U, 0.U) // #cycle-redirect-otherwise
+  used_event_sigs(11) := Mux(io.ifu.f4_delay, 1.U, 0.U)                                       // #cycle-f4-delay
+  used_event_sigs(12) := Mux(io.ifu.ftq_full, 1.U, 0.U)                                       // #cycle-ftq-full
+  used_event_sigs(13) := Mux(io.ifu.f4_empty, 1.U, 0.U)                                       // #cycle-f4-empty
+  used_event_sigs(14) := Mux(io.ifu.f3_redirect, 1.U, 0.U)                                    // #cycle-f3-redirect
+  used_event_sigs(15) := Mux(io.ifu.f2_redirect_refetch, 1.U, 0.U)                            // #cycle-f2-redirect-refetch
+  used_event_sigs_high(0) := Mux(io.ifu.f2_redirect_predict, 1.U, 0.U)                            // #cycle-f2-redirect-predict
   
-  used_event_sigs(8) := delay_sum_valid(br_masks)   //commit br instruciotns
-  used_event_sigs(9) := delay_sum_valid(jalr_masks) //commit jalr instruciotns
-  used_event_sigs(10) := delay_sum_valid(ret_masks)  //commit ret instructions
-  used_event_sigs(11) := delay_sum_valid(br_masks   & bsrc_c_masks) //ALU detect: br misprediction
-  used_event_sigs(12) := delay_sum_valid(jalr_masks & bsrc_c_masks) //ALU detect: jalr misprediction
-  used_event_sigs(13) := delay_sum_valid(ret_masks  & bsrc_c_masks) //ALU detect: ret misprediction
+  used_event_sigs_high(1) := Mux(io.ifu.tlb_fault, 1.U, 0.U)                                  // #cycle-tlb-fault
+  used_event_sigs_high(2) := Mux(io.ifu.perf.acquire, 1.U, 0.U)                               // #cache-miss
+  used_event_sigs_high(3) := Mux(io.ifu.icache_access, 1.U, 0.U)                              // #cache-access
+  used_event_sigs_high(4) := Mux(io.ifu.perf.tlbMiss, 1.U, 0.U)                               // #tlb-miss
+  used_event_sigs_high(5) := Mux(io.ifu.tlb_access, 1.U, 0.U)                                 // #tlb-access
+
+  used_event_sigs_high(6) := Mux(b2.mispredict, 1.U, 0.U)                                     // #mispredict                      
+  used_event_sigs_high(7) := delay_sum_valid(br_masks)                                        // #commit-br-insts
+  used_event_sigs_high(8) := delay_sum_valid(jalr_masks)                                      // #commit-jalr-insts
+  used_event_sigs_high(9) := delay_sum_valid(ret_masks)                                       // #commit-ret-insts
+  used_event_sigs_high(10) := delay_sum_valid(br_masks   & bsrc_c_masks) //ALU detect: br misprediction
+  used_event_sigs_high(11) := delay_sum_valid(jalr_masks & bsrc_c_masks) //ALU detect: jalr misprediction
+  used_event_sigs_high(12) := delay_sum_valid(ret_masks  & bsrc_c_masks) //ALU detect: ret misprediction
   
   /*
   used_event_sigs_high(0) := Mux(io.ifu.perf.acquire, 1.U, 0.U)

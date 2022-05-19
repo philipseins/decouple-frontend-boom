@@ -296,8 +296,18 @@ class BoomFrontendIO(implicit p: Parameters) extends BoomBundle
   val perf = Input(new FrontendPerfEvents)
   
   val enq_fb = Input(Bool())
-  val deq_fb = Input(Bool())
-  val clear_fb = Input(Bool())
+  val enq_fb_valid = Input(Bool())
+  val enq_fb_ready = Input(Bool())
+  val enq_uop_count = Input(UInt(4.W))
+  val clr_fb = Input(Bool())
+  val f4_delay = Input(Bool())
+  val ftq_full = Input(Bool())
+  val f4_empty = Input(Bool())
+  val f3_redirect = Input(Bool())
+  val f2_redirect_refetch = Input(Bool())
+  val f2_redirect_predict = Input(Bool())
+  val tlb_fault = Input(Bool())
+  val tlb_access = Input(Bool())
   val icache_access = Input(Bool())
 }
 
@@ -437,9 +447,14 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     false.B,
     false.B)
 
+  val tlb_fault = WireInit(false.B)
+
   when (s1_valid && !s1_tlb_miss) {
     // Stop fetching on fault
     s0_valid     := !(s1_tlb_resp.ae.inst || s1_tlb_resp.pf.inst)
+    when (s1_tlb_resp.ae.inst || s1_tlb_resp.pf.inst) {
+      tlb_fault := true.B
+    }
     s0_tsrc      := BSRC_1
     s0_vpc       := f1_predicted_target
     s0_ghist     := f1_predicted_ghist
@@ -490,6 +505,8 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     false.B)
 
   val f2_correct_f1_ghist = s1_ghist =/= f2_predicted_ghist && enableGHistStallRepair.B
+  val f2_redirect_refetch = WireInit(false.B)
+  val f2_redirect_predict = WireInit(false.B)
 
   when ((s2_valid && !icache.io.resp.valid) ||
         (s2_valid && icache.io.resp.valid && !f3_ready)) {
@@ -501,6 +518,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     s0_ghist := s2_ghist
     s0_tsrc  := s2_tsrc
     f1_clear := true.B
+    f2_redirect_refetch    := true.B
   } .elsewhen (s2_valid && f3_ready) {
     when (s1_valid && s1_vpc === f2_predicted_target && !f2_correct_f1_ghist) {
       // We trust our prediction of what the global history for the next branch should be
@@ -508,6 +526,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     }
     when ((s1_valid && (s1_vpc =/= f2_predicted_target || f2_correct_f1_ghist)) || !s1_valid) {
       f1_clear := true.B
+      f2_redirect_predict := true.B
 
       s0_valid     := !((s2_tlb_resp.ae.inst || s2_tlb_resp.pf.inst) && !s2_is_replay)
       s0_vpc       := f2_predicted_target
@@ -833,6 +852,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
 
   val f3_correct_f1_ghist = s1_ghist =/= f3_predicted_ghist && enableGHistStallRepair.B
   val f3_correct_f2_ghist = s2_ghist =/= f3_predicted_ghist && enableGHistStallRepair.B
+  val f3_redirect = WireInit(false.B)
 
   when (f3.io.deq.valid && f4_ready) {
     when (f3_fetch_bundle.cfi_is_call && f3_fetch_bundle.cfi_idx.valid) {
@@ -850,6 +870,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
           (!s2_valid && !s1_valid)) {
       f2_clear := true.B
       f1_clear := true.B
+      f3_redirect := true.B
 
       s0_valid     := !(f3_fetch_bundle.xcpt_pf_if || f3_fetch_bundle.xcpt_ae_if)
       s0_vpc       := f3_predicted_target
@@ -959,10 +980,19 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     ras.io.write_addr  := ftq.io.ras_update_pc
   }
 
-  io.cpu.enq_fb := fb.io.enq.fire()
-  io.cpu.clear_fb := fb.io.clear
-  io.cpu.deq_fb := fb.io.deq.fire()
+  io.cpu.enq_fb        := fb.io.enq.fire()
+  io.cpu.enq_fb_valid  := fb.io.enq.valid
+  io.cpu.enq_fb_ready  := fb.io.enq.ready
+  io.cpu.enq_uop_count := PopCount(fb.io.enq.bits.mask)
   io.cpu.icache_access := icache.io.req.fire()
+  io.cpu.f4_delay      := f4_delay
+  io.cpu.ftq_full      := !ftq.io.enq.ready
+  io.cpu.f4_empty      := !f4.io.deq.valid
+  io.cpu.f3_redirect   := f3_redirect
+  io.cpu.f2_redirect_refetch := f2_redirect_refetch
+  io.cpu.f2_redirect_predict := f2_redirect_predict
+  io.cpu.tlb_fault := tlb_fault
+  io.cpu.tlb_access := tlb.io.req.fire()
 
 
 
@@ -1016,6 +1046,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
 
   ftq.io.debug_ftq_idx := io.cpu.debug_ftq_idx
   io.cpu.debug_fetch_pc := ftq.io.debug_fetch_pc
+  io.cpu.clr_fb := fb.io.clear
 
 
   override def toString: String =
