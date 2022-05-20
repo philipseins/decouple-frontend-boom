@@ -309,6 +309,8 @@ class BoomFrontendIO(implicit p: Parameters) extends BoomBundle
   val tlb_fault = Input(Bool())
   val tlb_access = Input(Bool())
   val icache_access = Input(Bool())
+  val icache_invalid = Input(Bool())
+  val f3_full = Input(Bool())
 }
 
 /**
@@ -507,6 +509,8 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   val f2_correct_f1_ghist = s1_ghist =/= f2_predicted_ghist && enableGHistStallRepair.B
   val f2_redirect_refetch = WireInit(false.B)
   val f2_redirect_predict = WireInit(false.B)
+  val f2_icache_invalid = WireInit(false.B)
+  val f3_full = WireInit(false.B)
 
   when ((s2_valid && !icache.io.resp.valid) ||
         (s2_valid && icache.io.resp.valid && !f3_ready)) {
@@ -519,6 +523,12 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     s0_tsrc  := s2_tsrc
     f1_clear := true.B
     f2_redirect_refetch    := true.B
+    when (s2_valid && !icache.io.resp.valid) {
+      f2_icache_invalid := true.B
+    }
+    when (s2_valid && icache.io.resp.valid && !f3_ready) {
+      f3_full := true.B
+    }
   } .elsewhen (s2_valid && f3_ready) {
     when (s1_valid && s1_vpc === f2_predicted_target && !f2_correct_f1_ghist) {
       // We trust our prediction of what the global history for the next branch should be
@@ -993,6 +1003,8 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   io.cpu.f2_redirect_predict := f2_redirect_predict
   io.cpu.tlb_fault := tlb_fault
   io.cpu.tlb_access := tlb.io.req.fire()
+  io.cpu.icache_invalid := f2_icache_invalid
+  io.cpu.f3_full        := f3_full
 
 
 

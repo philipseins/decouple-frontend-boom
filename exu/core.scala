@@ -1134,7 +1134,9 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   used_event_sigs_high(10) := delay_sum_valid(br_masks   & bsrc_c_masks) //ALU detect: br misprediction
   used_event_sigs_high(11) := delay_sum_valid(jalr_masks & bsrc_c_masks) //ALU detect: jalr misprediction
   used_event_sigs_high(12) := delay_sum_valid(ret_masks  & bsrc_c_masks) //ALU detect: ret misprediction
-  
+  used_event_sigs_high(13) := Mux(io.ifu.icache_invalid, 1.U, 0.U)                            // #icache-resp-invalid
+  used_event_sigs_high(14) := Mux(io.ifu.f3_full, 1.U, 0.U)                                   // #f3-full
+
   /*
   used_event_sigs_high(0) := Mux(io.ifu.perf.acquire, 1.U, 0.U)
   used_event_sigs_high(1) := Mux(io.ifu.icache_access, 1.U, 0.U)
