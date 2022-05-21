@@ -1521,7 +1521,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
       }
 
       when (rob.io.commit.arch_valids(w)) {
-        printf("Cycle %d ", debug_cycles.value)
+        // printf("Cycle %d ", debug_cycles.value)
         printf("%d 0x%x ",
           priv,
           Sext(rob.io.commit.uops(w).debug_pc(vaddrBits-1,0), xLen))
