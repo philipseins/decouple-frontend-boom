@@ -462,20 +462,17 @@ class ALUUnit(isJmpUnit: Boolean = false, numStages: Int = 1, dataWidth: Int)(im
                 Mux(io.req.bits.uop.revent, io.req.bits.counter, alu_out))
   r_counter(0) := io.req.bits.rs1_data
   
-  // val debug_cycles = freechips.rocketchip.util.WideCounter(32)
-
-  // when(io.req.bits.uop.revent){
-  //   printf("fu, cycle: %d, revent source data: pc: 0x%x, data: %d\n", debug_cycles.value, io.req.bits.uop.debug_pc, io.req.bits.counter)
-  // }
-  // val print_flag = RegInit(false.B)
-  // when(io.resp.bits.uop.revent){
-  //   print_flag := true.B
-  // }
-
-
-  // when(io.resp.bits.uop.revent || print_flag){
-  //   printf("fu, cycle: %d, req, pc: 0x%x, ldst: %d, pdst: %d, lrs1: %d, data: %d, lrs2: %d, data: %d\n", debug_cycles.value, io.req.bits.uop.debug_pc, io.req.bits.uop.ldst, io.req.bits.uop.pdst, io.req.bits.uop.lrs1, io.req.bits.rs1_data, io.req.bits.uop.lrs2, io.req.bits.rs2_data)
-  // }
+  val debug_cycles = freechips.rocketchip.util.WideCounter(32)
+  val isprint = debug_cycles.value > 19530000.U && debug_cycles.value < 19600000.U
+  
+  when(isprint) {
+    when(io.req.valid) {
+      val uop = io.req.bits.uop
+      printf("cycle: %d, exe infor, pc: 0x%x, inst: 0x%x, lrs1: %d, lrs2: %d, rs1_data: 0x%x, rs2_data: 0x%x, mispredict: %d\n", debug_cycles.value, 
+        uop.debug_pc, uop.inst, uop.lrs1, uop.lrs2, io.req.bits.rs1_data, io.req.bits.rs2_data, mispredict)
+    }
+  }
+  
 
   r_pred(0) := io.req.bits.uop.is_sfb_shadow && io.req.bits.pred_data
   for (i <- 1 until numStages) {

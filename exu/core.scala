@@ -188,6 +188,9 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   val b1    = Wire(new BrUpdateMasks)
   val b2    = Reg(new BrResolutionInfo)
 
+  val debug_cycles = freechips.rocketchip.util.WideCounter(32)
+  val isprint = debug_cycles.value > 19530000.U && debug_cycles.value < 19600000.U
+
   brupdate.b1 := b1
   brupdate.b2 := b2
 
@@ -409,10 +412,12 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
       io.ifu.redirect_pc  := Mux(flush_typ === FlushTypes.eret,
                                  RegNext(RegNext(csr.io.evec)),
                                  csr.io.evec)
-      // printf("exception or eret redirect %x caused by %x\n", io.ifu.redirect_pc,
-      //        AlignPCToBoundary(io.ifu.get_pc(0).pc, icBlockBytes)
-      //        + RegNext(rob.io.flush.bits.pc_lob)
-      //        - Mux(RegNext(rob.io.flush.bits.edge_inst), 2.U, 0.U))
+      when (isprint) {
+        printf("Cycle %d exception or eret redirect %x caused by %x\n", debug_cycles.value, io.ifu.redirect_pc,
+              AlignPCToBoundary(io.ifu.get_pc(0).pc, icBlockBytes)
+              + RegNext(rob.io.flush.bits.pc_lob)
+              - Mux(RegNext(rob.io.flush.bits.edge_inst), 2.U, 0.U))
+      }
     } .otherwise {
       val flush_pc = (AlignPCToBoundary(io.ifu.get_pc(0).pc, icBlockBytes)
                       + RegNext(rob.io.flush.bits.pc_lob)
@@ -420,7 +425,9 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
       val flush_pc_next = flush_pc + Mux(RegNext(rob.io.flush.bits.is_rvc), 2.U, 4.U)
       io.ifu.redirect_pc := Mux(FlushTypes.useSamePC(flush_typ),
                                 flush_pc, flush_pc_next)
-      // printf("refetch redirect %x caused by %x\n", io.ifu.redirect_pc, flush_pc)
+      when(isprint) {
+        printf("Cycle %d refetch redirect %x caused by %x\n", debug_cycles.value, io.ifu.redirect_pc, flush_pc)
+      }
 
     }
     io.ifu.redirect_ftq_idx := RegNext(rob.io.flush.bits.ftq_idx)
@@ -435,7 +442,9 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
     val mispredict_target = Mux(brupdate.b2.pc_sel === PC_PLUS4, npc, bj_addr)
     io.ifu.redirect_val     := true.B
     io.ifu.redirect_pc      := mispredict_target
-    // printf("mispredict redirect %x caused by %x\n", io.ifu.redirect_pc, uop_maybe_pc)
+    when(isprint) {
+      printf("cycle %d mispredict redirect %x caused by %x\n", debug_cycles.value, io.ifu.redirect_pc, uop_maybe_pc)
+    }
     io.ifu.redirect_flush   := true.B
     io.ifu.redirect_ftq_idx := brupdate.b2.uop.ftq_idx
     val use_same_ghist = (brupdate.b2.cfi_type === CFI_BR &&
@@ -463,6 +472,9 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
     io.ifu.redirect_ghist.current_saw_branch_not_taken := use_same_ghist
   } .elsewhen (rob.io.flush_frontend || brupdate.b1.mispredict_mask =/= 0.U) {
     io.ifu.redirect_flush   := true.B
+    when (isprint) {
+      printf("cycle %d flush frontend, rob flush: %d, b1: %d\n", debug_cycles.value, rob.io.flush_frontend, brupdate.b1.mispredict_mask =/= 0.U)
+    }
   }
 
   // Tell the FTQ it can deallocate entries by passing youngest ftq_idx.
@@ -593,7 +605,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   } .otherwise {
     dec_finished_mask := dec_fire.asUInt | dec_finished_mask
   }
-  val debug_cycles = freechips.rocketchip.util.WideCounter(32)
+  
   // for (w <- 0 until coreWidth) {
   //   when(dec_fire(w)){
   //     printf("cycles: %d, w: %d, pc: 0x%x, inst: 0x%x, opc: %d, rd: %d, rs1: %d, rs2: %d, wevent: %d\n", debug_cycles.value, w.U, dec_uops(w).debug_pc, dec_uops(w).inst, dec_uops(w).uopc, dec_uops(w).ldst, dec_uops(w).lrs1, dec_uops(w).lrs2, dec_uops(w).wevent)
@@ -612,6 +624,14 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
                                          dec_uops(w).allocate_brtag // ren, dis can back pressure us
     dec_uops(w).br_tag  := dec_brmask_logic.io.br_tag(w)
     dec_uops(w).br_mask := dec_brmask_logic.io.br_mask(w)
+  }
+
+  when (isprint) { 
+    for (w <- 0 until coreWidth) {
+      when(dec_fire(w)) {
+        printf("cycle: %d, dec valid, pc: 0x%x, inst: 0x%x, isbr: %d, is_taken: %d\n", debug_cycles.value, dec_uops(w).debug_pc, dec_uops(w).inst, dec_uops(w).is_br, dec_uops(w).taken)
+      }
+    }
   }
 
   branch_mask_full := dec_brmask_logic.io.is_full
@@ -730,6 +750,15 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   val dis_stalls = dis_hazards.scanLeft(false.B) ((s,h) => s || h).takeRight(coreWidth)
   dis_fire := dis_valids zip dis_stalls map {case (v,s) => v && !s}
   dis_ready := !dis_stalls.last
+
+
+  when (isprint) { 
+    for (w <- 0 until coreWidth) {
+      when(dis_fire(w)) {
+        printf("cycle: %d, dis valid, pc: 0x%x, inst: 0x%x, isbr: %d, is_taken: %d\n", debug_cycles.value, dis_uops(w).debug_pc, dis_uops(w).inst, dis_uops(w).is_br, dis_uops(w).taken)
+      }
+    }
+  }
 
   //-------------------------------------------------------------
   // LDQ/STQ Allocation Logic
@@ -1064,8 +1093,8 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   val used_event_sigs = WireInit(VecInit(Seq.fill(16) { 0.U(4.W) }))
   val used_event_sigs_high = WireInit(VecInit(Seq.fill(16) { 0.U(4.W) }))
 
-  used_event_sigs(0) := 1.U
-  used_event_sigs(1) := RegNext(PopCount(rob.io.commit.arch_valids.asUInt))
+  used_event_sigs(0) := 1.U   // #cycles
+  used_event_sigs(1) := RegNext(PopCount(rob.io.commit.arch_valids.asUInt))   // #commit-inst
 
   def delay_sum_valid(mask: UInt) = RegNext(PopCount(rob.io.commit.arch_valids.asUInt & mask))
 
@@ -1121,12 +1150,27 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   used_event_sigs_high(15) := used_event_sigs(15)
   */
 
+  used_event_sigs(2) := Mux(io.ifu.enq_fb, io.ifu.enq_uop_count, 0.U)   // #uop-write-fb
+  used_event_sigs(3) := Mux(io.ifu.enq_fb_valid, 1.U, 0.U)              // #cycle-fb-enq-valid
+  used_event_sigs(4) := Mux(io.ifu.enq_fb_ready, 1.U, 0.U)              // #cycle-fb-enq-ready
+  used_event_sigs(5) := Mux(io.ifu.clr_fb, 1.U, 0.U)                    // #cycle-clear-fb
+  used_event_sigs(6) := Mux(io.ifu.sfence.valid, 1.U, 0.U)              // #cycle-clear-sfence
+  used_event_sigs(7) := Mux(io.ifu.redirect_flush, 1.U, 0.U)            // #cycle-clear-redirect
+  used_event_sigs(8) := Mux(RegNext(rob.io.flush.valid), 1.U, 0.U)      // #cycle-redirect-except-refetch
+  used_event_sigs(9) := Mux(brupdate.b2.mispredict && !RegNext(rob.io.flush.valid), 1.U, 0.U) // #cycle-redirect-mispredict
+  used_event_sigs(10) := Mux(rob.io.flush_frontend || brupdate.b1.mispredict_mask =/= 0.U, 1.U, 0.U) // #cycle-redirect-otherwise
+  used_event_sigs(11) := Mux(io.ifu.f4_delay, 1.U, 0.U)                                       // #cycle-f4-delay
+  used_event_sigs(12) := Mux(io.ifu.ftq_full, 1.U, 0.U)                                       // #cycle-ftq-full
+  used_event_sigs(13) := Mux(io.ifu.f4_empty, 1.U, 0.U)                                       // #cycle-f4-empty
+  used_event_sigs(14) := Mux(io.ifu.predec_redirect, 1.U, 0.U)                                    // #cycle-predecode-redirect
+
+
   used_event_sigs(2) := Mux(io.ifu.perf.acquire, 1.U, 0.U)
   used_event_sigs(3) := Mux(io.ifu.icache_access, 1.U, 0.U)
   used_event_sigs(4) := Mux(b2.mispredict, 1.U, 0.U)
   used_event_sigs(5) := Mux(io.ifu.enq_fb, 1.U, 0.U)
   used_event_sigs(6) := Mux(io.ifu.deq_fb, 1.U, 0.U)
-  used_event_sigs(7) := Mux(io.ifu.clear_fb, 1.U, 0.U)
+  // used_event_sigs(7) := Mux(io.ifu.clear_fb, 1.U, 0.U)
   used_event_sigs(8) := Mux(io.ifu.ptq_empty, 1.U, 0.U)
   used_event_sigs(9) := Mux(io.ifu.ptq_full, 1.U, 0.U)
   used_event_sigs(10) := Mux(io.ifu.ptq_quarter, 1.U, 0.U)
@@ -1520,8 +1564,8 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
         }
       }
 
-      when (rob.io.commit.arch_valids(w)) {
-        // printf("Cycle %d ", debug_cycles.value)
+      when (rob.io.commit.arch_valids(w) && isprint) {
+        printf("Cycle %d ", debug_cycles.value)
         printf("%d 0x%x ",
           priv,
           Sext(rob.io.commit.uops(w).debug_pc(vaddrBits-1,0), xLen))

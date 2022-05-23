@@ -54,6 +54,9 @@ class FetchBuffer(implicit p: Parameters) extends BoomModule
   require (numEntries % coreWidth == 0)
   val numRows = numEntries / coreWidth
 
+  val debug_cycles = freechips.rocketchip.util.WideCounter(32)
+  val isprint = debug_cycles.value > 19530000.U && debug_cycles.value < 19600000.U
+
   val ram = Reg(Vec(numEntries, new MicroOp))
   ram.suggestName("fb_uop_ram")
   val deq_vec = Wire(Vec(numRows, Vec(coreWidth, new MicroOp)))
@@ -152,6 +155,9 @@ class FetchBuffer(implicit p: Parameters) extends BoomModule
       when (do_enq && in_mask(i) && enq_idxs(i)(j)) {
         ram(j) := in_uops(i)
       }
+    }
+    when (do_enq && in_mask(i) && isprint) {
+      printf("cycle %d, uop in fb, pc: 0x%x, inst: %x, taken: %d\n", debug_cycles.value, in_uops(i).debug_pc, in_uops(i).inst, in_uops(i).taken)
     }
   }
 
