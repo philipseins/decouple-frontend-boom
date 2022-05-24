@@ -43,6 +43,12 @@ trait ScalarOpConstants
 
   //************************************
   // Extra Constants
+  //PerfCounterSupport
+  val SetEvent_ProcTag        = 1.U(12.W)
+  val SetEvent_MaxPriv    = 6.U(12.W)
+  val SetEvent_StartInsts = 10.U(12.W)
+
+  val ReadEvent_ProcTag       = 1025.U(12.W)
 
   // Which branch predictor predicted us
   val BSRC_SZ = 2

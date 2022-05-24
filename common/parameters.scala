@@ -99,10 +99,7 @@ case class BoomCoreParams(
   /* debug stuff */
   enableCommitLogPrintf: Boolean = false,
   enableBranchPrintf: Boolean = false,
-  enableMemtracePrintf: Boolean = false,
-  
-  /* ptq */
-  ptqEntries: Int = 16
+  enableMemtracePrintf: Boolean = false
 
 // DOC include end: BOOM Parameters
 ) extends freechips.rocketchip.tile.CoreParams
@@ -170,7 +167,6 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
   val maxBrCount    = boomParams.maxBrCount          // number of branches we can speculate simultaneously
   val ftqSz         = boomParams.ftq.nEntries        // number of FTQ entries
   val ptqSz         = boomParams.ptq.nEntries
-  val ptqEntries    = boomParams.ptqEntries
   val numFetchBufferEntries = boomParams.numFetchBufferEntries // number of instructions that stored between fetch&decode
 
   val numIntPhysRegs= boomParams.numIntPhysRegisters // size of the integer physical register file
@@ -292,4 +288,7 @@ trait HasBoomCoreParameters extends freechips.rocketchip.tile.HasCoreParameters
 
   val corePAddrBits = paddrBits
   val corePgIdxBits = pgIdxBits
+
+  //PerfCounterSupport
+  val subECounterNum = 4
 }
