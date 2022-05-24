@@ -124,8 +124,6 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
                             Seq(true))) // The jmp unit is always bypassable
   pregfile.io := DontCare // Only use the IO if enableSFBOpt
 
-  //chw: for event
-  val event_counters = Module(new EventCounter(issue_units.map(_.issueWidth).sum, exe_units.count(_.hasAlu)))
   // wb arbiter for the 0th ll writeback
   // TODO: should this be a multi-arb?
   val ll_wbarb         = Module(new Arbiter(new ExeUnitResp(xLen), 1 +
@@ -369,7 +367,122 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
         "Using FDivSqrt?       : " + usingFDivSqrt.toString,
         "Using VM?             : " + usingVM.toString) + "\n"
     + BoomCoreStringPrefix(
-        "PTQ Entries           : " + ptqEntries) + "\n")
+        "PTQ Entries           : " + ptqSz) + "\n")
+
+
+  //PerfCounterSupport: added some special registers
+  // process event register
+  val procTag = RegInit(0.U(32.W))
+  val startInsts = RegInit(0.U(64.W))
+  val maxPriv  = RegInit(0.U(2.W))
+
+  val procRunningInsts = RegInit(0.U(64.W))
+  val isUserMode = csr.io.status.prv === 0.U && RegNext(csr.io.status.prv === 0.U) && RegNext(RegNext(csr.io.status.prv === 0.U))
+  val workValid = isUserMode && procTag === 0x1234567.U && (startInsts =/= 0.U)
+  val startCounter = csr.io.status.prv <= maxPriv && procTag === 0x1234567.U
+
+  //update procRunningInsts
+  when (workValid) { //usemode
+    procRunningInsts := procRunningInsts + RegNext(PopCount(rob.io.commit.arch_valids.asUInt))
+  }
+
+  //-------------------------------------------------------------
+  //PerfCounterSupport
+  val event_counters = Module(new EventCounter(exe_units.numIrfReaders))
+
+  //reset event counters
+  event_counters.io.reset_counter := false.B
+  for (w <- 0 until coreWidth) {
+    val uop = rob.io.commit.uops(w)
+    when (rob.io.commit.valids(w) && uop.opCounter && uop.inst(30, 30) === 1.U) { //tag == 1024, reset all counters
+      event_counters.io.reset_counter := true.B
+    }
+  }
+
+  //reset counter when running > start
+  when (workValid && startInsts =/= 0.U && procRunningInsts > startInsts) {
+    startInsts := 0.U
+    procRunningInsts := 0.U
+    event_counters.io.reset_counter := true.B
+  }
+
+  //start read counter
+  for (w <- 0 until exe_units.numIrfReaders) {
+    event_counters.io.read_addr(w).valid := iss_valids(w) && iss_uops(w).opCounter && iss_uops(w).ldst =/= 0.U
+    event_counters.io.read_addr(w).bits := iss_uops(w).inst(27, 20)
+  }
+
+  //connect signal to counters
+  for (w <- 0 until subECounterNum*16) {
+    event_counters.io.event_signals(w) := 0.U
+  }
+
+  when (startCounter) {
+    event_counters.io.event_signals(0) := 1.U  //cycles
+    event_counters.io.event_signals(1) := RegNext(PopCount(rob.io.commit.arch_valids.asUInt)) // commit inst
+
+    event_counters.io.event_signals(2) := Mux(io.ifu.icache_valid_access, 1.U, 0.U) //i-cache valid access number
+    event_counters.io.event_signals(3) := Mux(io.ifu.perf.acquire, 1.U, 0.U) //i-cache miss
+    event_counters.io.event_signals(4) := Mux(io.ifu.perf.tlbMiss, 1.U, 0.U) //i-tlb miss
+    /*
+    event_counters.io.event_signals(5) := Mux(io.ifu.bpsrc_f1, 1.U, 0.U) // npc use f1
+    event_counters.io.event_signals(6) := Mux(io.ifu.bpsrc_f2, 1.U, 0.U) // npc use f2
+    event_counters.io.event_signals(7) := Mux(io.ifu.bpsrc_f3, 1.U, 0.U) // npc use f3
+    event_counters.io.event_signals(8) := Mux(io.ifu.bpsrc_core, 1.U, 0.U) // npc use core information
+
+    event_counters.io.event_signals(9)  := Mux(dec_none_inst, 1.U, 0.U)  //no inst need to be decoded
+    event_counters.io.event_signals(10) := Mux(dec_one_inst, 1.U, 0.U)   //only one inst need to be decoded
+    event_counters.io.event_signals(11) := PopCount(dec_brmask_logic.io.is_full.asUInt)   //br mask full times 
+
+    event_counters.io.event_signals(12) := PopCount(ren_stalls.asUInt)   //rename stall number
+
+    event_counters.io.event_signals(13) := PopCount(ldq_dis_stall.asUInt) //ldq dispatch stall times
+    event_counters.io.event_signals(14) := PopCount(stq_dis_stall.asUInt) //ldq dispatch stall times
+    event_counters.io.event_signals(15) := Mux(rob_dis_stall, coreWidth.U, 0.U) //rob dispatch stall times
+
+    event_counters.io.event_signals(16) := PopCount(iss_valids.asUInt)         //valid issue uop counter
+    event_counters.io.event_signals(17) := PopCount(spec_miss_issuop.asUInt)  //valid mis wakeup issue uop counter
+    event_counters.io.event_signals(18) := io.lsu.dcache_valid_access            //valid dcache access number
+    event_counters.io.event_signals(19) := io.lsu.dcache_nack_num             //d-cache load & store nack number
+    event_counters.io.event_signals(20) := Mux(io.lsu.perf.acquire, 1.U, 0.U) //dcache send req to next level number
+    event_counters.io.event_signals(21) := io.lsu.dtlb_valid_access          //valid dtlb req number
+    event_counters.io.event_signals(22) := io.lsu.dtlb_miss_num              //dtlb miss number
+    event_counters.io.event_signals(23) := Mux(io.lsu.perf.tlbMiss, 1.U, 0.U) //d-tlb miss
+
+    event_counters.io.event_signals(24)  := Mux(io.ptw.perf.l2miss, 1.U, 0.U) //L2 TLB miss
+    event_counters.io.event_signals(25)  := Mux(misalign_excpt || lstd_pagefault || fetch_pagefault, 1.U, 0.U) // misaligned & page fault
+    event_counters.io.event_signals(26) := Mux(mini_exception, 1.U, 0.U) //load store wrong prediction cause mini exception
+    event_counters.io.event_signals(27) := Mux(rob.io.commit.rollback, 1.U, 0.U) //rob rollback cycles
+    event_counters.io.event_signals(28) := RegNext(PopCount(com_is_br.asUInt)) //commit br number
+    event_counters.io.event_signals(29) := RegNext(PopCount(com_is_jalr.asUInt)) //commit jalr number
+    event_counters.io.event_signals(30) := Mux(b2.mispredict, 1.U, 0.U) //bp mis-prediction
+    event_counters.io.event_signals(31) := Mux(b2.mispredict && b2.cfi_type === CFI_JALR, 1.U, 0.U) //bp mis-prediction caused by jalr
+
+    event_counters.io.event_signals(32) := RegNext(PopCount(com_is_ld.asUInt)) //commit load number
+    event_counters.io.event_signals(33) := RegNext(PopCount(com_is_sd.asUInt)) //commit store number
+    event_counters.io.event_signals(34) := 1.U
+    event_counters.io.event_signals(35) := 1.U
+    event_counters.io.event_signals(36) := 1.U
+    event_counters.io.event_signals(37) := 1.U
+    event_counters.io.event_signals(38) := 1.U
+    event_counters.io.event_signals(39) := 1.U
+    event_counters.io.event_signals(40) := 1.U
+    event_counters.io.event_signals(41) := 1.U
+    event_counters.io.event_signals(42) := 1.U
+    event_counters.io.event_signals(43) := 1.U
+    event_counters.io.event_signals(44) := 1.U
+    event_counters.io.event_signals(45) := 1.U
+    event_counters.io.event_signals(46) := 1.U
+    event_counters.io.event_signals(47) := 1.U
+    event_counters.io.event_signals(48) := 1.U
+    event_counters.io.event_signals(49) := 1.U
+    event_counters.io.event_signals(50) := 1.U
+    event_counters.io.event_signals(51) := 1.U
+    event_counters.io.event_signals(52) := 1.U
+    event_counters.io.event_signals(53) := 1.U
+    */
+  }
+  
 
   //-------------------------------------------------------------
   //-------------------------------------------------------------
@@ -605,12 +718,6 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   } .otherwise {
     dec_finished_mask := dec_fire.asUInt | dec_finished_mask
   }
-  
-  // for (w <- 0 until coreWidth) {
-  //   when(dec_fire(w)){
-  //     printf("cycles: %d, w: %d, pc: 0x%x, inst: 0x%x, opc: %d, rd: %d, rs1: %d, rs2: %d, wevent: %d\n", debug_cycles.value, w.U, dec_uops(w).debug_pc, dec_uops(w).inst, dec_uops(w).uopc, dec_uops(w).ldst, dec_uops(w).lrs1, dec_uops(w).lrs2, dec_uops(w).wevent)
-  //   }
-  // }
 
   //-------------------------------------------------------------
   // Branch Mask Logic
@@ -673,7 +780,6 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
    * split the INT/FP rename pipelines into separate instantiations.
    * Won't have to do this anymore with a properly decoupled FP pipeline.
    */
-  // val print_flag = RegInit(false.B)
   
   for (w <- 0 until coreWidth) {
     val i_uop   = rename_stage.io.ren2_uops(w)
@@ -701,11 +807,6 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
     dis_uops(w).ppred_busy := p_uop.ppred_busy && dis_uops(w).is_sfb_shadow
 
     ren_stalls(w) := rename_stage.io.ren_stalls(w) || f_stall || p_stall
-
-    // when(dis_uops(w).revent){
-    //   print_flag := true.B
-    // }
-
   }
 
   //-------------------------------------------------------------
@@ -768,9 +869,6 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
     dis_uops(w).ldq_idx := io.lsu.dis_ldq_idx(w)
     dis_uops(w).stq_idx := io.lsu.dis_stq_idx(w)
 
-    // when(dis_fire(w) && (print_flag || dis_uops(w).revent)){
-    //   printf("rename pc: 0x%x, inst: 0x%x, lrs1: %d, prs1: %d, lrs2: %d, prs2: %d, ldst: %d, pdst: %d\n", dis_uops(w).debug_pc, dis_uops(w).inst, dis_uops(w).lrs1, dis_uops(w).prs1, dis_uops(w).lrs2, dis_uops(w).prs2, dis_uops(w).ldst, dis_uops(w).pdst)
-    // }
   }
 
   //-------------------------------------------------------------
@@ -917,8 +1015,6 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   pred_wakeup.bits.fflags := DontCare
   pred_wakeup.bits.data := DontCare
   pred_wakeup.bits.predicated := DontCare
-  //chw: for event
-  pred_wakeup.bits.counter := DontCare
 
   // Perform load-hit speculative wakeup through a special port (performs a poison wake-up).
   issue_units map { iu =>
@@ -1041,16 +1137,6 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   iregister_read.io.bypass := bypasses
   iregister_read.io.pred_bypass := pred_bypasses
 
-  //chw: for read event counter
-  for (w <- 0 until exe_units.numIrfReaders) {
-    event_counters.io.read_addr(w).valid := iss_valids(w) && iss_uops(w).revent
-    event_counters.io.read_addr(w).bits := iss_uops(w).lrs2
-
-    // when(iss_valids(w) && iss_uops(w).revent){
-    //   printf("core set read idx, cycle: %d, idx: %d, pc: 0x%x, lrs1: %d, lrs2: %d\n", debug_cycles.value, w.U, iss_uops(w).debug_pc, iss_uops(w).lrs1, iss_uops(w).lrs2)
-    // }
-
-  }
   
 
   //-------------------------------------------------------------
@@ -1073,26 +1159,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   // Delay retire/exception 1 cycle
   csr.io.retire    := RegNext(PopCount(rob.io.commit.arch_valids.asUInt))
 
-  //chw: 统计dispatch的br指令数量
-  // val dis_br = Wire(Vec(coreWidth, Bool()))
-  // for(w <- 0 until coreWidth){
-  //   dis_br(w) := dis_fire(w) && dis_uops(w).is_br
-  // }
-  // event_counters.io.event_signals(7) := RegNext(PopCount(dis_br.asUInt))
-
-  //chw: 设置event set的选择信号，用于选择当前16个计数器分别计数哪些事件
-  val event_set_sel = RegInit(0.U(5.W))
-  for (w <- 0 until coreWidth) {
-    when (rob.io.commit.valids(w)) {
-      when (rob.io.commit.uops(w).uopc === uopOR && rob.io.commit.uops(w).ldst === 0.U) {
-        event_set_sel := rob.io.commit.uops(w).lrs1 // + rob.io.commit.uops(w).lrs2
-      }
-    }
-  }
-
-  val used_event_sigs = WireInit(VecInit(Seq.fill(16) { 0.U(4.W) }))
-  val used_event_sigs_high = WireInit(VecInit(Seq.fill(16) { 0.U(4.W) }))
-
+  /*
   used_event_sigs(0) := 1.U   // #cycles
   used_event_sigs(1) := RegNext(PopCount(rob.io.commit.arch_valids.asUInt))   // #commit-inst
 
@@ -1103,14 +1170,14 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   val ret_masks    = VecInit(rob.io.commit.uops.map(_.is_ret)).asUInt
   val bsrc_c_masks = VecInit(rob.io.commit.uops.map(_.debug_fsrc === BSRC_C)).asUInt
 
-  /*
+  
   used_event_sigs(2) := delay_sum_valid(br_masks)   //commit br instruciotns
   used_event_sigs(3) := delay_sum_valid(jalr_masks) //commit jalr instruciotns
   used_event_sigs(4) := delay_sum_valid(ret_masks)  //commit ret instructions
   used_event_sigs(5) := delay_sum_valid(br_masks   & bsrc_c_masks) //ALU detect: br misprediction
   used_event_sigs(6) := delay_sum_valid(jalr_masks & bsrc_c_masks) //ALU detect: jalr misprediction
   used_event_sigs(7) := delay_sum_valid(ret_masks  & bsrc_c_masks) //ALU detect: ret misprediction
-  */
+  
 
   val taken_masks       = VecInit(rob.io.commit.uops.map(_.taken)).asUInt
   val btb_hit_masks     = VecInit(rob.io.commit.uops.map(_.btb_hit)).asUInt
@@ -1121,7 +1188,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   val loop_flip_masks   = VecInit(rob.io.commit.uops.map(_.loop_flip)).asUInt
   val loop_taken_masks  = VecInit(rob.io.commit.uops.map(_.loop_taken)).asUInt
 
-  /*
+  
   used_event_sigs(8)  := delay_sum_valid(jalr_masks & (~ret_masks).asUInt & btb_hit_masks)
   used_event_sigs(9)  := delay_sum_valid(jalr_masks & (~ret_masks).asUInt & btb_hit_masks & bsrc_c_masks)
   used_event_sigs(10) := delay_sum_valid(br_masks & loop_hit_masks)
@@ -1148,7 +1215,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   used_event_sigs_high(13) := used_event_sigs(13)
   used_event_sigs_high(14) := used_event_sigs(14)
   used_event_sigs_high(15) := used_event_sigs(15)
-  */
+  
 
   used_event_sigs(2) := Mux(io.ifu.enq_fb, io.ifu.enq_uop_count, 0.U)   // #uop-write-fb
   used_event_sigs(3) := Mux(io.ifu.enq_fb_valid, 1.U, 0.U)              // #cycle-fb-enq-valid
@@ -1185,11 +1252,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   used_event_sigs_high(3) := delay_sum_valid(br_masks   & bsrc_c_masks) //ALU detect: br misprediction
   used_event_sigs_high(4) := delay_sum_valid(jalr_masks & bsrc_c_masks) //ALU detect: jalr misprediction
   used_event_sigs_high(5) := delay_sum_valid(ret_masks  & bsrc_c_masks) //ALU detect: ret misprediction
-
-  for (w <- 0 until 16) {
-    event_counters.io.event_signals(w) := used_event_sigs(w)
-    event_counters.io.event_signals_high(w) := used_event_sigs_high(w)
-  }
+  */
 
 
   csr.io.exception := RegNext(rob.io.com_xcpt.valid)
@@ -1268,16 +1331,28 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
     if (exe_unit.readsIrf) {
       exe_unit.io.req <> iregister_read.io.exe_reqs(iss_idx)
 
-      //chw: for event counter, add read counter to fu
-      exe_unit.io.req.bits.counter := event_counters.io.read_data(iss_idx)
-      // when(exe_unit.io.req.valid){
-      //   printf("core, set exeunit req counter, cycle: %d, valid: %d, pc: 0x%x, revent: %d, lrs1: %d, lrs2: %d, data: %d\n", debug_cycles.value, exe_unit.io.req.valid, exe_unit.io.req.bits.uop.debug_pc, exe_unit.io.req.bits.uop.revent, exe_unit.io.req.bits.uop.lrs1, exe_unit.io.req.bits.uop.lrs2, exe_unit.io.req.bits.counter)
-      // }
+      //PerfCounterSupport: get counter value and send to execution.req.rs1_data
+      val uop = exe_unit.io.req.bits.uop
+      when (uop.opCounter && uop.ldst =/= 0.U) {
+        exe_unit.io.req.bits.rs1_data := event_counters.io.read_data(iss_idx)
+      }
 
       if (exe_unit.bypassable) {
         for (i <- 0 until exe_unit.numBypassStages) {
           bypasses(bypass_idx) := exe_unit.io.bypass(i)
           bypass_idx += 1
+        }
+      }
+
+      //PerfCounterSupport: read special registers data from regfile
+      val rrd_uop = iregister_read.io.exe_reqs(iss_idx).bits.uop
+      when (rrd_uop.setEvent && rrd_uop.ldst === 0.U ) {
+        val tag = rrd_uop.inst(31, 20)
+        val rs1_data = iregister_read.io.exe_reqs(iss_idx).bits.rs1_data
+        switch (tag){
+          is (SetEvent_ProcTag)       { procTag := rs1_data(31, 0) }
+          is (SetEvent_MaxPriv)       { maxPriv  := rs1_data(1,0) }
+          is (SetEvent_StartInsts)    { startInsts := rs1_data }
         }
       }
       iss_idx += 1
@@ -1355,10 +1430,17 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
         iregfile.io.write_ports(w_cnt).bits.data := wbdata
       }
 
-      // when(wbresp.bits.uop.revent){
-      //   printf("iregfile: valid: %d, addr: %d, data: %d\n", iregfile.io.write_ports(w_cnt).valid, iregfile.io.write_ports(w_cnt).bits.addr, iregfile.io.write_ports(w_cnt).bits.data)
-      //   printf("core write counter, pc: 0x%x, pdst: %d, ldst: %d, data: %d\n", wbresp.bits.uop.debug_pc, wbresp.bits.uop.pdst, wbresp.bits.uop.ldst, wbdata)
-      // }
+      when (wbresp.bits.uop.opCounter && wbresp.bits.uop.ldst =/= 0.U) {
+        printf("writeBackCounter, pc: 0x%x, tag: %d, ldst: %d, data: 0x%x\n", wbresp.bits.uop.debug_pc, wbresp.bits.uop.inst(31, 20), wbresp.bits.uop.ldst, wbdata)
+      }
+
+      //Enable_MaxInsts_Support: write special registers data to regfile
+      when (wbresp.bits.uop.setEvent && wbresp.bits.uop.ldst =/= 0.U ) {
+        val tag = wbresp.bits.uop.inst(31, 20)
+        switch (tag) {
+          is (ReadEvent_ProcTag)   { iregfile.io.write_ports(w_cnt).bits.data := Cat(0.U(32.W), procTag) }
+        }
+      }
 
       assert (!wbIsValid(RT_FLT), "[fppipeline] An FP writeback is being attempted to the Int Regfile.")
 
@@ -1380,23 +1462,6 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
     pregfile.io.write_ports(0).valid     := jmp_unit.io.iresp.valid && jmp_unit.io.iresp.bits.uop.is_sfb_br
     pregfile.io.write_ports(0).bits.addr := jmp_unit.io.iresp.bits.uop.pdst
     pregfile.io.write_ports(0).bits.data := jmp_unit.io.iresp.bits.data
-  }
-
-  //chw: for write counter 
-  var wc_cnt = 0
-  for (i <- 0 until exe_units.length) {
-    if (exe_units(i).hasAlu) {
-      val wbresp = exe_units(i).io.iresp
-      event_counters.io.write_addr(wc_cnt).valid := wbresp.valid && wbresp.bits.uop.wevent
-      event_counters.io.write_addr(wc_cnt).bits := wbresp.bits.uop.lrs2
-      event_counters.io.write_data(wc_cnt) := wbresp.bits.counter
-
-      // when(wbresp.valid && wbresp.bits.uop.wevent){
-      //   printf("core, write event, cycles: %d, idx: %d, pc: 0x%x, lrs1: %d, lrs2: %d, data: %d\n", debug_cycles.value, i.U, wbresp.bits.uop.debug_pc, wbresp.bits.uop.lrs1, wbresp.bits.uop.lrs2, wbresp.bits.counter)
-      // }
-
-      wc_cnt += 1
-    }
   }
 
 
