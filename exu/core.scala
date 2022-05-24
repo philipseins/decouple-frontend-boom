@@ -421,45 +421,45 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
     event_counters.io.event_signals(0) := 1.U  //cycles
     event_counters.io.event_signals(1) := RegNext(PopCount(rob.io.commit.arch_valids.asUInt)) // commit inst
 
-    event_counters.io.event_signals(2) := Mux(io.ifu.icache_valid_access, 1.U, 0.U) //i-cache valid access number
-    event_counters.io.event_signals(3) := Mux(io.ifu.perf.acquire, 1.U, 0.U) //i-cache miss
-    event_counters.io.event_signals(4) := Mux(io.ifu.perf.tlbMiss, 1.U, 0.U) //i-tlb miss
-    /*
-    event_counters.io.event_signals(5) := Mux(io.ifu.bpsrc_f1, 1.U, 0.U) // npc use f1
-    event_counters.io.event_signals(6) := Mux(io.ifu.bpsrc_f2, 1.U, 0.U) // npc use f2
-    event_counters.io.event_signals(7) := Mux(io.ifu.bpsrc_f3, 1.U, 0.U) // npc use f3
-    event_counters.io.event_signals(8) := Mux(io.ifu.bpsrc_core, 1.U, 0.U) // npc use core information
+    event_counters.io.event_signals(2) := 1.U
+    event_counters.io.event_signals(3) := 1.U 
+    event_counters.io.event_signals(4) := 1.U 
+    
+    event_counters.io.event_signals(5) := 1.U 
+    event_counters.io.event_signals(6) := 1.U 
+    event_counters.io.event_signals(7) := 1.U 
+    event_counters.io.event_signals(8) := 1.U 
 
-    event_counters.io.event_signals(9)  := Mux(dec_none_inst, 1.U, 0.U)  //no inst need to be decoded
-    event_counters.io.event_signals(10) := Mux(dec_one_inst, 1.U, 0.U)   //only one inst need to be decoded
-    event_counters.io.event_signals(11) := PopCount(dec_brmask_logic.io.is_full.asUInt)   //br mask full times 
+    event_counters.io.event_signals(9)  :=1.U 
+    event_counters.io.event_signals(10) :=1.U
+    event_counters.io.event_signals(11) :=1.U
 
-    event_counters.io.event_signals(12) := PopCount(ren_stalls.asUInt)   //rename stall number
+    event_counters.io.event_signals(12) :=1.U 
 
-    event_counters.io.event_signals(13) := PopCount(ldq_dis_stall.asUInt) //ldq dispatch stall times
-    event_counters.io.event_signals(14) := PopCount(stq_dis_stall.asUInt) //ldq dispatch stall times
-    event_counters.io.event_signals(15) := Mux(rob_dis_stall, coreWidth.U, 0.U) //rob dispatch stall times
+    event_counters.io.event_signals(13) :=1.U 
+    event_counters.io.event_signals(14) :=1.U 
+    event_counters.io.event_signals(15) :=1.U
 
-    event_counters.io.event_signals(16) := PopCount(iss_valids.asUInt)         //valid issue uop counter
-    event_counters.io.event_signals(17) := PopCount(spec_miss_issuop.asUInt)  //valid mis wakeup issue uop counter
-    event_counters.io.event_signals(18) := io.lsu.dcache_valid_access            //valid dcache access number
-    event_counters.io.event_signals(19) := io.lsu.dcache_nack_num             //d-cache load & store nack number
-    event_counters.io.event_signals(20) := Mux(io.lsu.perf.acquire, 1.U, 0.U) //dcache send req to next level number
-    event_counters.io.event_signals(21) := io.lsu.dtlb_valid_access          //valid dtlb req number
-    event_counters.io.event_signals(22) := io.lsu.dtlb_miss_num              //dtlb miss number
-    event_counters.io.event_signals(23) := Mux(io.lsu.perf.tlbMiss, 1.U, 0.U) //d-tlb miss
+    event_counters.io.event_signals(16) :=1.U
+    event_counters.io.event_signals(17) :=1.U
+    event_counters.io.event_signals(18) :=1.U
+    event_counters.io.event_signals(19) :=1.U
+    event_counters.io.event_signals(20) :=1.U
+    event_counters.io.event_signals(21) :=1.U
+    event_counters.io.event_signals(22) :=1.U 
+    event_counters.io.event_signals(23) :=1.U 
 
-    event_counters.io.event_signals(24)  := Mux(io.ptw.perf.l2miss, 1.U, 0.U) //L2 TLB miss
-    event_counters.io.event_signals(25)  := Mux(misalign_excpt || lstd_pagefault || fetch_pagefault, 1.U, 0.U) // misaligned & page fault
-    event_counters.io.event_signals(26) := Mux(mini_exception, 1.U, 0.U) //load store wrong prediction cause mini exception
-    event_counters.io.event_signals(27) := Mux(rob.io.commit.rollback, 1.U, 0.U) //rob rollback cycles
-    event_counters.io.event_signals(28) := RegNext(PopCount(com_is_br.asUInt)) //commit br number
-    event_counters.io.event_signals(29) := RegNext(PopCount(com_is_jalr.asUInt)) //commit jalr number
-    event_counters.io.event_signals(30) := Mux(b2.mispredict, 1.U, 0.U) //bp mis-prediction
-    event_counters.io.event_signals(31) := Mux(b2.mispredict && b2.cfi_type === CFI_JALR, 1.U, 0.U) //bp mis-prediction caused by jalr
+    event_counters.io.event_signals(24) :=1.U 
+    event_counters.io.event_signals(25) :=1.U
+    event_counters.io.event_signals(26) :=1.U 
+    event_counters.io.event_signals(27) :=1.U 
+    event_counters.io.event_signals(28) :=1.U 
+    event_counters.io.event_signals(29) :=1.U 
+    event_counters.io.event_signals(30) :=1.U
+    event_counters.io.event_signals(31) :=1.U 
 
-    event_counters.io.event_signals(32) := RegNext(PopCount(com_is_ld.asUInt)) //commit load number
-    event_counters.io.event_signals(33) := RegNext(PopCount(com_is_sd.asUInt)) //commit store number
+    event_counters.io.event_signals(32) :=1.U 
+    event_counters.io.event_signals(33) :=1.U 
     event_counters.io.event_signals(34) := 1.U
     event_counters.io.event_signals(35) := 1.U
     event_counters.io.event_signals(36) := 1.U
@@ -480,7 +480,6 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
     event_counters.io.event_signals(51) := 1.U
     event_counters.io.event_signals(52) := 1.U
     event_counters.io.event_signals(53) := 1.U
-    */
   }
   
 

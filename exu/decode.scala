@@ -596,6 +596,29 @@ class DecodeUnit(implicit p: Parameters) extends BoomModule
 
   //-------------------------------------------------------------
 
+  //PerfCounterSupport:
+  val setEvent = (cs.uopc === uopADDI) && (inst(RD_MSB,RD_LSB) === 0.U)
+  val getEvent = setEvent && (inst(31, 29) =/= 0.U)
+  uop.setEvent := setEvent
+
+  //Enable_PerfCounter_Support:
+  val opCounter = (cs.uopc === uopANDI) && (inst(RD_MSB,RD_LSB) === 0.U)
+  val readCounter = opCounter && (inst(29, 29) === 1.U) //tag == 512, 此时是读
+  uop.opCounter := opCounter
+
+  when (readCounter || getEvent) {
+    uop.ldst := inst(RS1_MSB,RS1_LSB)
+  }
+
+  when (opCounter || setEvent) {
+    uop.is_unique := true.B
+  }
+
+  when (readCounter) {
+    uop.uopc := uopADDI
+    uop.imm_packed := 0.U
+  }
+
   io.deq.uop := uop
 }
 
