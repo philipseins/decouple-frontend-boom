@@ -419,40 +419,39 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
 
   when (startCounter) {
     event_counters.io.event_signals(0) := 1.U  //cycles
-    event_counters.io.event_signals(1) := RegNext(PopCount(rob.io.commit.arch_valids.asUInt)) // commit inst
-
-    event_counters.io.event_signals(2) := Mux(io.ifu.enq_fb, io.ifu.enq_uop_count, 0.U) //uop write into fetch buffer
-    event_counters.io.event_signals(3) := Mux(io.ifu.enq_fb_valid, 1.U, 0.U) //cycles for enqueue fetch buffer valid
-    event_counters.io.event_signals(4) := Mux(io.ifu.enq_fb_ready, 1.U, 0.U) //cycles for enqueue fetch buffer ready
-    event_counters.io.event_signals(5) := Mux(io.ifu.clr_fb, 1.U, 0.U) // clear fetch buffer
-    event_counters.io.event_signals(6) := Mux(io.ifu.sfence.valid, 1.U, 0.U) // sfence 
-    event_counters.io.event_signals(7) := Mux(io.ifu.redirect_flush, 1.U, 0.U) // redirect flush
-    event_counters.io.event_signals(8) := Mux(RegNext(rob.io.flush.valid), 1.U, 0.U) // redirect exception or refetch
-    event_counters.io.event_signals(9)  := Mux(brupdate.b2.mispredict && !RegNext(rob.io.flush.valid), 1.U, 0.U)  //redirect mispredict
-    event_counters.io.event_signals(10) := Mux(rob.io.flush_frontend || brupdate.b1.mispredict_mask =/= 0.U, 1.U, 0.U)   //redirect otherwise
-    
-    event_counters.io.event_signals(11) := Mux(io.ifu.f4_delay, 1.U, 0.U)   //cycle f4 delay 
-    event_counters.io.event_signals(12) := Mux(io.ifu.ftq_full, 1.U, 0.U)   //cycle ftq full
-    event_counters.io.event_signals(13) := Mux(io.ifu.f4_empty, 1.U, 0.U) //cycle f4 empty
-    event_counters.io.event_signals(14) := Mux(io.ifu.f3_redirect, 1.U, 0.U) //cycle f3 redirect
-    event_counters.io.event_signals(15) := Mux(io.ifu.f2_redirect_refetch, 1.U, 0.U) //cycle f2 redirect refetch
-    event_counters.io.event_signals(16) := Mux(io.ifu.f2_redirect_predict, 1.U, 0.U)         //cycle f2 redirect predict
-    
-    event_counters.io.event_signals(17) := Mux(io.ifu.tlb_fault, 1.U, 0.U)  //tlb fault
-    event_counters.io.event_signals(18) := Mux(io.ifu.perf.acquire, 1.U, 0.U)            //cache miss
-    event_counters.io.event_signals(19) := Mux(io.ifu.icache_access, 1.U, 0.U)             //cache access
-    event_counters.io.event_signals(20) := Mux(io.ifu.perf.tlbMiss, 1.U, 0.U) //tlb miss
-    event_counters.io.event_signals(21) := Mux(io.ifu.tlb_access, 1.U, 0.U)          //tlb access
-    
-    event_counters.io.event_signals(22) := Mux(b2.mispredict, 1.U, 0.U)              //mispredict
-    event_counters.io.event_signals(23) := delay_sum_valid(br_masks) //commit br insts
-    event_counters.io.event_signals(24) := delay_sum_valid(jalr_masks) //commit jalr insts
-    event_counters.io.event_signals(25) := delay_sum_valid(ret_masks) // commit ret insts
-    event_counters.io.event_signals(26) := delay_sum_valid(br_masks   & bsrc_c_masks) //br misprediction
-    event_counters.io.event_signals(27) := delay_sum_valid(jalr_masks & bsrc_c_masks) //jalr misprediction
-    event_counters.io.event_signals(28) := delay_sum_valid(ret_masks  & bsrc_c_masks) //ret misprediction
-    event_counters.io.event_signals(29) := Mux(io.ifu.icache_invalid, 1.U, 0.U) //icache resp invalid
-    event_counters.io.event_signals(30) := Mux(io.ifu.f3_full, 1.U, 0.U) //f3 full
+    event_counters.io.event_signals(1) := RegNext(PopCount(rob.io.commit.arch_valids.asUInt)) //commit insts
+    event_counters.io.event_signals(2) := Mux(io.ifu.enq_fb, 1.U, 0.U)  //cycles enqueue into fetch buffer
+    event_counters.io.event_signals(3) := Mux(io.ifu.enq_fb, io.ifu.enq_uop_count, 0.U) //uops enqueue into fetch buffer
+    event_counters.io.event_signals(4) := Mux(io.ifu.enq_fb_valid, 1.U, 0.U)  //cycles enqueue valid
+    event_counters.io.event_signals(5) := Mux(io.ifu.enq_fb_valid, io.ifu.enq_uop_count, 0.U) //uops enqueue valid
+    event_counters.io.event_signals(6) := Mux(io.ifu.enq_fb_ready, 1.U, 0.U) //cycles enqueue ready (fetch buffer not full)
+    event_counters.io.event_signals(7) := Mux(!io.ifu.enq_fb_ready, io.ifu.enq_uop_count, 0.U) // when fetch buffer full, waste uops, need minus
+    event_counters.io.event_signals(8) := Mux(io.ifu.clr_fb, 1.U, 0.U) // clear fetch buffer
+    event_counters.io.event_signals(9) := Mux(io.ifu.sfence.valid, 1.U, 0.U) // sfence 
+    event_counters.io.event_signals(10) := Mux(io.ifu.redirect_flush, 1.U, 0.U) // redirect flush
+    event_counters.io.event_signals(11) := Mux(RegNext(rob.io.flush.valid), 1.U, 0.U) // redirect exception or refetch
+    event_counters.io.event_signals(12) := Mux(brupdate.b2.mispredict && !RegNext(rob.io.flush.valid), 1.U, 0.U)  //redirect mispredict
+    event_counters.io.event_signals(13) := Mux(rob.io.flush_frontend || brupdate.b1.mispredict_mask =/= 0.U, 1.U, 0.U)   //redirect otherwise
+    event_counters.io.event_signals(14) := Mux(io.ifu.f4_delay, 1.U, 0.U)   //cycle f4 delay 
+    event_counters.io.event_signals(15) := Mux(io.ifu.ftq_full, 1.U, 0.U)   //cycle ftq full
+    event_counters.io.event_signals(16) := Mux(io.ifu.f4_empty, 1.U, 0.U) //cycle f4 empty
+    event_counters.io.event_signals(17) := Mux(io.ifu.f3_redirect, 1.U, 0.U) //cycle f3 redirect
+    event_counters.io.event_signals(18) := Mux(io.ifu.f2_redirect_refetch, 1.U, 0.U) //cycle f2 redirect refetch
+    event_counters.io.event_signals(19) := Mux(io.ifu.f2_redirect_predict, 1.U, 0.U)         //cycle f2 redirect predict
+    event_counters.io.event_signals(20) := Mux(io.ifu.tlb_fault, 1.U, 0.U)  //tlb fault
+    event_counters.io.event_signals(21) := Mux(io.ifu.perf.acquire, 1.U, 0.U)            //cache miss
+    event_counters.io.event_signals(22) := Mux(io.ifu.icache_access, 1.U, 0.U)             //cache access
+    event_counters.io.event_signals(23) := Mux(io.ifu.perf.tlbMiss, 1.U, 0.U) //tlb miss
+    event_counters.io.event_signals(24) := Mux(io.ifu.tlb_access, 1.U, 0.U)          //tlb access
+    event_counters.io.event_signals(25) := Mux(b2.mispredict, 1.U, 0.U)              //mispredict
+    event_counters.io.event_signals(26) := delay_sum_valid(br_masks) //commit br insts
+    event_counters.io.event_signals(27) := delay_sum_valid(jalr_masks) //commit jalr insts
+    event_counters.io.event_signals(28) := delay_sum_valid(ret_masks) // commit ret insts
+    event_counters.io.event_signals(29) := delay_sum_valid(br_masks   & bsrc_c_masks) //br misprediction
+    event_counters.io.event_signals(30) := delay_sum_valid(jalr_masks & bsrc_c_masks) //jalr misprediction
+    event_counters.io.event_signals(31) := delay_sum_valid(ret_masks  & bsrc_c_masks) //ret misprediction
+    event_counters.io.event_signals(32) := Mux(io.ifu.icache_invalid, 1.U, 0.U) //icache resp invalid
+    event_counters.io.event_signals(33) := Mux(io.ifu.f3_full, 1.U, 0.U) //f3 full
   }
 
   //-------------------------------------------------------------
