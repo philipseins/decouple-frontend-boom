@@ -335,10 +335,9 @@ class BoomFrontendIO(implicit p: Parameters) extends BoomBundle
   val refetch_redirect = Input(Bool())
   val tlb_fault = Input(Bool())
   val tlb_access = Input(Bool())
-  val icache_valid = Input(Bool())
-  val f3_full = Input(Bool())
+  val icache_invalid = Input(Bool())
+  val f7_full = Input(Bool())
 
-  val deq_fb = Input(Bool())
   val ptq_clear = Input(Bool())
   val ptq_empty = Input(Bool())
   val ptq_full = Input(Bool())
@@ -1405,8 +1404,6 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   io.cpu.tlb_access     := tlb.io.req.fire()
   io.cpu.icache_invalid := icache_invalid
   io.cpu.f7_full      := f7_full
-
-  io.cpu.deq_fb := fb.io.deq.fire()
 
   // -------------------------------------------------------
   // **** To Core (F5) ****

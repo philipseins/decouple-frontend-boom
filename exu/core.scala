@@ -418,6 +418,13 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
     event_counters.io.event_signals(w) := 0.U
   }
 
+  def delay_sum_valid(mask: UInt) = RegNext(PopCount(rob.io.commit.arch_valids.asUInt & mask))
+
+  val br_masks     = VecInit(rob.io.commit.uops.map(_.is_br)).asUInt
+  val jalr_masks   = VecInit(rob.io.commit.uops.map(_.is_jalr)).asUInt
+  val ret_masks    = VecInit(rob.io.commit.uops.map(_.is_ret)).asUInt
+  val bsrc_c_masks = VecInit(rob.io.commit.uops.map(_.debug_fsrc === BSRC_C)).asUInt
+
   when (startCounter) {
     event_counters.io.event_signals(0) := 1.U  //cycles
     event_counters.io.event_signals(1) := RegNext(PopCount(rob.io.commit.arch_valids.asUInt)) //commit insts
@@ -451,28 +458,14 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
     event_counters.io.event_signals(29) := delay_sum_valid(jalr_masks & bsrc_c_masks) //jalr misprediction
     event_counters.io.event_signals(30) := delay_sum_valid(ret_masks  & bsrc_c_masks) //ret misprediction
     event_counters.io.event_signals(31) := Mux(io.ifu.icache_invalid, 1.U, 0.U) //icache resp invalid
-    event_counters.io.event_signals(32) := Mux(io.ifu.f3_full, 1.U, 0.U) //f3 full
-    event_counters.io.event_signals(33) := Mux(io.ifu.)
-    event_counters.io.event_signals(34) := 1.U
-    event_counters.io.event_signals(35) := 1.U
-    event_counters.io.event_signals(36) := 1.U
-    event_counters.io.event_signals(37) := 1.U
-    event_counters.io.event_signals(38) := 1.U
-    event_counters.io.event_signals(39) := 1.U
-    event_counters.io.event_signals(40) := 1.U
-    event_counters.io.event_signals(41) := 1.U
-    event_counters.io.event_signals(42) := 1.U
-    event_counters.io.event_signals(43) := 1.U
-    event_counters.io.event_signals(44) := 1.U
-    event_counters.io.event_signals(45) := 1.U
-    event_counters.io.event_signals(46) := 1.U
-    event_counters.io.event_signals(47) := 1.U
-    event_counters.io.event_signals(48) := 1.U
-    event_counters.io.event_signals(49) := 1.U
-    event_counters.io.event_signals(50) := 1.U
-    event_counters.io.event_signals(51) := 1.U
-    event_counters.io.event_signals(52) := 1.U
-    event_counters.io.event_signals(53) := 1.U
+    event_counters.io.event_signals(32) := Mux(io.ifu.f7_full, 1.U, 0.U) //f7 full
+    event_counters.io.event_signals(33) := Mux(io.ifu.ptq_clear, 1.U, 0.U) //cycles ptq clear
+    event_counters.io.event_signals(34) := Mux(io.ifu.ptq_empty, 1.U, 0.U) //cycles ptq empty
+    event_counters.io.event_signals(35) := Mux(io.ifu.ptq_full, 1.U, 0.U) // cycles ptq full
+    event_counters.io.event_signals(36) := Mux(io.ifu.ptq_quarter, 1.U, 0.U)  // ptq <= 1/4
+    event_counters.io.event_signals(37) := Mux(io.ifu.ptq_half, 1.U, 0.U)   // 1/4 < ptq <= 1/2
+    event_counters.io.event_signals(38) := Mux(io.ifu.ptq_half_quarter, 1.U, 0.U) // 1/2 < ptq <= 3/4
+    event_counters.io.event_signals(39) := Mux(io.ifu.ptq_nearfull, 1.U, 0.U) // 3/4 < ptq
   }
   
 
@@ -1150,64 +1143,6 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   // Extra I/O
   // Delay retire/exception 1 cycle
   csr.io.retire    := RegNext(PopCount(rob.io.commit.arch_valids.asUInt))
-
-  /*
-  
-
-  def delay_sum_valid(mask: UInt) = RegNext(PopCount(rob.io.commit.arch_valids.asUInt & mask))
-
-  val br_masks     = VecInit(rob.io.commit.uops.map(_.is_br)).asUInt
-  val jalr_masks   = VecInit(rob.io.commit.uops.map(_.is_jalr)).asUInt
-  val ret_masks    = VecInit(rob.io.commit.uops.map(_.is_ret)).asUInt
-  val bsrc_c_masks = VecInit(rob.io.commit.uops.map(_.debug_fsrc === BSRC_C)).asUInt
-
-  
-  used_event_sigs(2) := delay_sum_valid(br_masks)   //commit br instruciotns
-  used_event_sigs(3) := delay_sum_valid(jalr_masks) //commit jalr instruciotns
-  used_event_sigs(4) := delay_sum_valid(ret_masks)  //commit ret instructions
-  used_event_sigs(5) := delay_sum_valid(br_masks   & bsrc_c_masks) //ALU detect: br misprediction
-  used_event_sigs(6) := delay_sum_valid(jalr_masks & bsrc_c_masks) //ALU detect: jalr misprediction
-  used_event_sigs(7) := delay_sum_valid(ret_masks  & bsrc_c_masks) //ALU detect: ret misprediction
-  
-
-
-
-  used_event_sigs_high(0) := Mux(io.ifu.perf.acquire, 1.U, 0.U)
-  used_event_sigs_high(1) := Mux(b2.mispredict, 1.U, 0.U)
-  used_event_sigs_high(2) := Mux(io.ifu.enq_fb, 1.U, 0.U)
-  used_event_sigs_high(3) := Mux(io.ifu.ptq_clear, 1.U, 0.U)
-  used_event_sigs_high(4) := Mux(io.ifu.ptq_empty, 1.U, 0.U)
-  used_event_sigs_high(5) := Mux(io.ifu.ptq_full, 1.U, 0.U)
-  used_event_sigs_high(6) := Mux(io.ifu.ptq_three, 1.U, 0.U)
-  used_event_sigs_high(7) := Mux(io.ifu.ptq_six, 1.U, 0.U)
-
-  used_event_sigs_high(8) := Mux(io.ifu.ptq_nine, 1.U, 0.U)
-  used_event_sigs_high(9) := Mux(io.ifu.ptq_twelve, 1.U, 0.U)
-  used_event_sigs_high(10) := Mux(io.ifu.ptq_fifteen, 1.U, 0.U)
-  
-
-
-  used_event_sigs(2) := Mux(io.ifu.perf.acquire, 1.U, 0.U)
-  used_event_sigs(3) := Mux(io.ifu.icache_access, 1.U, 0.U)
-  used_event_sigs(4) := Mux(b2.mispredict, 1.U, 0.U)
-  used_event_sigs(5) := Mux(io.ifu.enq_fb, 1.U, 0.U)
-  used_event_sigs(6) := Mux(io.ifu.deq_fb, 1.U, 0.U)
-  // used_event_sigs(7) := Mux(io.ifu.clear_fb, 1.U, 0.U)
-  used_event_sigs(8) := Mux(io.ifu.ptq_empty, 1.U, 0.U)
-  used_event_sigs(9) := Mux(io.ifu.ptq_full, 1.U, 0.U)
-  used_event_sigs(10) := Mux(io.ifu.ptq_quarter, 1.U, 0.U)
-  used_event_sigs(11) := Mux(io.ifu.ptq_half, 1.U, 0.U)
-  used_event_sigs(12) := Mux(io.ifu.ptq_half_quarter, 1.U, 0.U)
-  used_event_sigs(13) := Mux(io.ifu.ptq_nearfull, 1.U, 0.U)
-  used_event_sigs(14) := Mux(io.ifu.ptq_clear, 1.U, 0.U)
-  used_event_sigs(15) := Mux(io.ifu.ptq_clear, io.ifu.ptq_count, 0.U)
-  used_event_sigs_high(0) := delay_sum_valid(br_masks)   //commit br instruciotns
-  used_event_sigs_high(1) := delay_sum_valid(jalr_masks) //commit jalr instruciotns
-  used_event_sigs_high(2) := delay_sum_valid(ret_masks)  //commit ret instructions
-  used_event_sigs_high(3) := delay_sum_valid(br_masks   & bsrc_c_masks) //ALU detect: br misprediction
-  used_event_sigs_high(4) := delay_sum_valid(jalr_masks & bsrc_c_masks) //ALU detect: jalr misprediction
-  used_event_sigs_high(5) := delay_sum_valid(ret_masks  & bsrc_c_masks) //ALU detect: ret misprediction
-  */
 
 
   csr.io.exception := RegNext(rob.io.com_xcpt.valid)
