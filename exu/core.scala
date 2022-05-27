@@ -187,6 +187,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   val b2    = Reg(new BrResolutionInfo)
 
   val debug_cycles = freechips.rocketchip.util.WideCounter(32)
+  
   val isprint = debug_cycles.value > 19530000.U && debug_cycles.value < 19600000.U
 
   brupdate.b1 := b1
@@ -419,47 +420,39 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
 
   when (startCounter) {
     event_counters.io.event_signals(0) := 1.U  //cycles
-    event_counters.io.event_signals(1) := RegNext(PopCount(rob.io.commit.arch_valids.asUInt)) // commit inst
-
-    event_counters.io.event_signals(2) := 1.U
-    event_counters.io.event_signals(3) := 1.U 
-    event_counters.io.event_signals(4) := 1.U 
-    
-    event_counters.io.event_signals(5) := 1.U 
-    event_counters.io.event_signals(6) := 1.U 
-    event_counters.io.event_signals(7) := 1.U 
-    event_counters.io.event_signals(8) := 1.U 
-
-    event_counters.io.event_signals(9)  :=1.U 
-    event_counters.io.event_signals(10) :=1.U
-    event_counters.io.event_signals(11) :=1.U
-
-    event_counters.io.event_signals(12) :=1.U 
-
-    event_counters.io.event_signals(13) :=1.U 
-    event_counters.io.event_signals(14) :=1.U 
-    event_counters.io.event_signals(15) :=1.U
-
-    event_counters.io.event_signals(16) :=1.U
-    event_counters.io.event_signals(17) :=1.U
-    event_counters.io.event_signals(18) :=1.U
-    event_counters.io.event_signals(19) :=1.U
-    event_counters.io.event_signals(20) :=1.U
-    event_counters.io.event_signals(21) :=1.U
-    event_counters.io.event_signals(22) :=1.U 
-    event_counters.io.event_signals(23) :=1.U 
-
-    event_counters.io.event_signals(24) :=1.U 
-    event_counters.io.event_signals(25) :=1.U
-    event_counters.io.event_signals(26) :=1.U 
-    event_counters.io.event_signals(27) :=1.U 
-    event_counters.io.event_signals(28) :=1.U 
-    event_counters.io.event_signals(29) :=1.U 
-    event_counters.io.event_signals(30) :=1.U
-    event_counters.io.event_signals(31) :=1.U 
-
-    event_counters.io.event_signals(32) :=1.U 
-    event_counters.io.event_signals(33) :=1.U 
+    event_counters.io.event_signals(1) := RegNext(PopCount(rob.io.commit.arch_valids.asUInt)) //commit insts
+    event_counters.io.event_signals(2) := Mux(io.ifu.enq_fb, 1.U, 0.U) //cycles enqueue into fetch buffer
+    event_counters.io.event_signals(3) := Mux(io.ifu.enq_fb, io.ifu.enq_uop_count, 0.U) //uops enqueue into fetch buffer
+    event_counters.io.event_signals(4) := Mux(io.ifu.enq_fb_valid, 1.U, 0.U)  //cycles enqueue valid
+    event_counters.io.event_signals(5) := Mux(io.ifu.enq_fb_valid, io.ifu.enq_uop_count, 0.U) //uops enqueue valid
+    event_counters.io.event_signals(6) := Mux(io.ifu.enq_fb_ready, 1.U, 0.U) //cycles enqueue ready (fetch buffer not full) 
+    event_counters.io.event_signals(7) := Mux(!io.ifu.enq_fb_ready, io.ifu.enq_uop_count, 0.U) // when fetch buffer full, waste uops, need minus
+    event_counters.io.event_signals(8) := Mux(io.ifu.clr_fb, 1.U, 0.U) // clear fetch buffer
+    event_counters.io.event_signals(9) := Mux(io.ifu.sfence.valid, 1.U, 0.U) // sfence 
+    event_counters.io.event_signals(10) := Mux(io.ifu.redirect_flush, 1.U, 0.U) // redirect flush
+    event_counters.io.event_signals(11) := Mux(RegNext(rob.io.flush.valid), 1.U, 0.U) // redirect exception or refetch
+    event_counters.io.event_signals(12) := Mux(brupdate.b2.mispredict && !RegNext(rob.io.flush.valid), 1.U, 0.U)  //redirect mispredict
+    event_counters.io.event_signals(13) := Mux(rob.io.flush_frontend || brupdate.b1.mispredict_mask =/= 0.U, 1.U, 0.U)   //redirect otherwise
+    event_counters.io.event_signals(14) := Mux(io.ifu.f4_delay, 1.U, 0.U)   //cycle f4 delay 
+    event_counters.io.event_signals(15) := Mux(io.ifu.ftq_full, 1.U, 0.U)   //cycle ftq full
+    event_counters.io.event_signals(16) := Mux(io.ifu.f4_empty, 1.U, 0.U) //cycle f4 empty
+    event_counters.io.event_signals(17) := Mux(io.ifu.predec_redirect, 1.U, 0.U) //#cycle-predecode-redirect
+    event_counters.io.event_signals(18) := Mux(io.ifu.refetch_redirect, 1.U, 0.U) //#cycle-icache-refetch-redirect
+    event_counters.io.event_signals(19) := Mux(io.ifu.tlb_fault, 1.U, 0.U)  //tlb fault
+    event_counters.io.event_signals(20) := Mux(io.ifu.perf.acquire, 1.U, 0.U) //cache miss
+    event_counters.io.event_signals(21) := Mux(io.ifu.icache_access, 1.U, 0.U) //cache access
+    event_counters.io.event_signals(22) := Mux(io.ifu.perf.tlbMiss, 1.U, 0.U) //tlb miss
+    event_counters.io.event_signals(23) := Mux(io.ifu.tlb_access, 1.U, 0.U)          //tlb access 
+    event_counters.io.event_signals(24) := Mux(b2.mispredict, 1.U, 0.U)              //mispredict
+    event_counters.io.event_signals(25) := delay_sum_valid(br_masks) //commit br insts
+    event_counters.io.event_signals(26) := delay_sum_valid(jalr_masks) //commit jalr insts
+    event_counters.io.event_signals(27) := delay_sum_valid(ret_masks) // commit ret insts
+    event_counters.io.event_signals(28) := delay_sum_valid(br_masks   & bsrc_c_masks) //br misprediction
+    event_counters.io.event_signals(29) := delay_sum_valid(jalr_masks & bsrc_c_masks) //jalr misprediction
+    event_counters.io.event_signals(30) := delay_sum_valid(ret_masks  & bsrc_c_masks) //ret misprediction
+    event_counters.io.event_signals(31) := Mux(io.ifu.icache_invalid, 1.U, 0.U) //icache resp invalid
+    event_counters.io.event_signals(32) := Mux(io.ifu.f3_full, 1.U, 0.U) //f3 full
+    event_counters.io.event_signals(33) := Mux(io.ifu.)
     event_counters.io.event_signals(34) := 1.U
     event_counters.io.event_signals(35) := 1.U
     event_counters.io.event_signals(36) := 1.U
@@ -1159,8 +1152,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   csr.io.retire    := RegNext(PopCount(rob.io.commit.arch_valids.asUInt))
 
   /*
-  used_event_sigs(0) := 1.U   // #cycles
-  used_event_sigs(1) := RegNext(PopCount(rob.io.commit.arch_valids.asUInt))   // #commit-inst
+  
 
   def delay_sum_valid(mask: UInt) = RegNext(PopCount(rob.io.commit.arch_valids.asUInt & mask))
 
@@ -1178,24 +1170,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   used_event_sigs(7) := delay_sum_valid(ret_masks  & bsrc_c_masks) //ALU detect: ret misprediction
   
 
-  val taken_masks       = VecInit(rob.io.commit.uops.map(_.taken)).asUInt
-  val btb_hit_masks     = VecInit(rob.io.commit.uops.map(_.btb_hit)).asUInt
-  val bim_taken_masks   = VecInit(rob.io.commit.uops.map(_.bim_taken)).asUInt
-  val tage_hit_masks    = VecInit(rob.io.commit.uops.map(_.tage_hit)).asUInt
-  val tage_taken_masks  = VecInit(rob.io.commit.uops.map(_.tage_taken)).asUInt
-  val loop_hit_masks    = VecInit(rob.io.commit.uops.map(_.loop_hit)).asUInt
-  val loop_flip_masks   = VecInit(rob.io.commit.uops.map(_.loop_flip)).asUInt
-  val loop_taken_masks  = VecInit(rob.io.commit.uops.map(_.loop_taken)).asUInt
 
-  
-  used_event_sigs(8)  := delay_sum_valid(jalr_masks & (~ret_masks).asUInt & btb_hit_masks)
-  used_event_sigs(9)  := delay_sum_valid(jalr_masks & (~ret_masks).asUInt & btb_hit_masks & bsrc_c_masks)
-  used_event_sigs(10) := delay_sum_valid(br_masks & loop_hit_masks)
-  used_event_sigs(11) := delay_sum_valid(br_masks & (bim_taken_masks ^ taken_masks))
-  used_event_sigs(12) := delay_sum_valid(br_masks & tage_hit_masks)
-  used_event_sigs(13) := delay_sum_valid(br_masks & tage_hit_masks & (tage_taken_masks ^ taken_masks))
-  used_event_sigs(14) := delay_sum_valid(br_masks & loop_flip_masks)
-  used_event_sigs(15) := delay_sum_valid(br_masks & loop_flip_masks & (loop_taken_masks ^ taken_masks))
 
   used_event_sigs_high(0) := Mux(io.ifu.perf.acquire, 1.U, 0.U)
   used_event_sigs_high(1) := Mux(b2.mispredict, 1.U, 0.U)
@@ -1209,26 +1184,7 @@ class BoomCore(usingTrace: Boolean)(implicit p: Parameters) extends BoomModule
   used_event_sigs_high(8) := Mux(io.ifu.ptq_nine, 1.U, 0.U)
   used_event_sigs_high(9) := Mux(io.ifu.ptq_twelve, 1.U, 0.U)
   used_event_sigs_high(10) := Mux(io.ifu.ptq_fifteen, 1.U, 0.U)
-  used_event_sigs_high(11) := used_event_sigs(11)
-  used_event_sigs_high(12) := used_event_sigs(12)
-  used_event_sigs_high(13) := used_event_sigs(13)
-  used_event_sigs_high(14) := used_event_sigs(14)
-  used_event_sigs_high(15) := used_event_sigs(15)
   
-
-  used_event_sigs(2) := Mux(io.ifu.enq_fb, io.ifu.enq_uop_count, 0.U)   // #uop-write-fb
-  used_event_sigs(3) := Mux(io.ifu.enq_fb_valid, 1.U, 0.U)              // #cycle-fb-enq-valid
-  used_event_sigs(4) := Mux(io.ifu.enq_fb_ready, 1.U, 0.U)              // #cycle-fb-enq-ready
-  used_event_sigs(5) := Mux(io.ifu.clr_fb, 1.U, 0.U)                    // #cycle-clear-fb
-  used_event_sigs(6) := Mux(io.ifu.sfence.valid, 1.U, 0.U)              // #cycle-clear-sfence
-  used_event_sigs(7) := Mux(io.ifu.redirect_flush, 1.U, 0.U)            // #cycle-clear-redirect
-  used_event_sigs(8) := Mux(RegNext(rob.io.flush.valid), 1.U, 0.U)      // #cycle-redirect-except-refetch
-  used_event_sigs(9) := Mux(brupdate.b2.mispredict && !RegNext(rob.io.flush.valid), 1.U, 0.U) // #cycle-redirect-mispredict
-  used_event_sigs(10) := Mux(rob.io.flush_frontend || brupdate.b1.mispredict_mask =/= 0.U, 1.U, 0.U) // #cycle-redirect-otherwise
-  used_event_sigs(11) := Mux(io.ifu.f4_delay, 1.U, 0.U)                                       // #cycle-f4-delay
-  used_event_sigs(12) := Mux(io.ifu.ftq_full, 1.U, 0.U)                                       // #cycle-ftq-full
-  used_event_sigs(13) := Mux(io.ifu.f4_empty, 1.U, 0.U)                                       // #cycle-f4-empty
-  used_event_sigs(14) := Mux(io.ifu.predec_redirect, 1.U, 0.U)                                    // #cycle-predecode-redirect
 
 
   used_event_sigs(2) := Mux(io.ifu.perf.acquire, 1.U, 0.U)

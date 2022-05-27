@@ -332,6 +332,11 @@ class BoomFrontendIO(implicit p: Parameters) extends BoomBundle
   val ftq_full = Input(Bool())
   val f4_empty = Input(Bool())
   val predec_redirect = Input(Bool())
+  val refetch_redirect = Input(Bool())
+  val tlb_fault = Input(Bool())
+  val tlb_access = Input(Bool())
+  val icache_valid = Input(Bool())
+  val f3_full = Input(Bool())
 
   val deq_fb = Input(Bool())
   val ptq_clear = Input(Bool())
@@ -759,9 +764,12 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   icache.io.s1_paddr := f5_ppc
   icache.io.s1_kill  := tlb.io.resp.miss || f5_clear
 
+  val tlb_fault = WireInit(false.B)
+
   when (f5_valid && !f5_tlb_miss) {
     when (f5_tlb_resp.ae.inst || f5_tlb_resp.pf.inst) {
       f4_valid := false.B
+      tlb_fault := true.B
     }
     f4_is_replay := false.B
     read_ready   := !(f5_tlb_resp.ae.inst || f5_tlb_resp.pf.inst)
@@ -801,6 +809,10 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   
   val f7_ready = Wire(Bool())
 
+  val refetch_redirect = WireInit(false.B)
+  val icache_invalid = WireInit(false.B)
+  val f7_full = WireInit(false.B)
+
   icache.io.s2_kill := f6_xcpt
 
   when ((f6_valid && !icache.io.resp.valid) ||
@@ -821,6 +833,13 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
     f4_bpd_f2_valid := f6_bpd_f2_valid
 
     f5_clear     := true.B
+    refetch_redirect   := true.B
+    when (f6_valid && !icache.io.resp.valid) {
+      icache_invalid := true.B
+    }
+    when(f6_valid && icache.io.resp.valid && !f7_ready) {
+      f7_full := true.B
+    }
     ptq.io.reset := true.B
     when (isprint) {
       printf("Cycle %d redo icache access %x with f4_vpc %x valid: %d icache_valid: %d f7_ready: %d\n", debug_cycles.value, f6_vpc, f4_vpc, f6_valid, icache.io.resp.valid, f7_ready)
@@ -828,6 +847,7 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   } .elsewhen(f6_valid && f7_ready) {
     when (!f5_valid) {
       f5_clear := true.B
+
       when ((f6_tlb_resp.ae.inst || f6_tlb_resp.pf.inst) && !f6_is_replay) {
         f4_valid := false.B
       }
@@ -1380,6 +1400,11 @@ class BoomFrontendModule(outer: BoomFrontend) extends LazyModuleImp(outer)
   io.cpu.ftq_full      := !ftq.io.enq.ready
   io.cpu.f4_empty      := !f4.io.deq.valid
   io.cpu.predec_redirect := predec_redirect
+  io.cpu.refetch_redirect := refetch_redirect
+  io.cpu.tlb_fault      := tlb_fault
+  io.cpu.tlb_access     := tlb.io.req.fire()
+  io.cpu.icache_invalid := icache_invalid
+  io.cpu.f7_full      := f7_full
 
   io.cpu.deq_fb := fb.io.deq.fire()
 
